@@ -4,7 +4,6 @@
  * @return {void}
  */
 (function(global){
-    'use strict';
     global.Atomix;
     global.Proton;
     global.Singleton;
@@ -15,6 +14,7 @@
     global.mx;
 
     var nsref,
+        nsget,
         exp,
         lib,
         atomix,
@@ -89,7 +89,7 @@
      * @param {string}   name
      * @param {Function} fn
      */
-   	Constructor = function(name, fn){
+    Constructor = function(name, fn){
         return (eval("( function(call){ return function " + name +
             "(){ return call(this, arguments); }; })"))(fn.apply.bind(fn));
     };
@@ -109,16 +109,16 @@
     /**
      * Base object definition and constructor.
      */
-	Quark = function(){
-	    /**
+    Quark = function(){
+        /**
          * Metadata associated with the object.
          * @type {Metadata}
          */
         this._meta_ = new Metadata({
-	    	name : 'Quark',
-	    	info : 'Quark Object',
+            name : 'Quark',
+            info : 'Quark Object',
             ns   : _exports_
-	    });
+        });
 
         /**
          * Standard toString implementation.
@@ -136,41 +136,41 @@
          * @param  {object} opts    Configuration options and metadata.
          * @return {function}       Constructor for the child object.
          */
-	    this.decendant = function(name, opts){
-			var meta, fn, proto, parent;
-			proto  = Object.getPrototypeOf(this);
-        	parent = proto.constructor;
+        this.decendant = function(name, opts){
+            var meta, fn, proto, parent;
+            proto  = Object.getPrototypeOf(this);
+            parent = proto.constructor;
 
-			opts = (typeof opts!=='undefined') ? opts : {};
-        	opts.name = name;
-        	opts.info = (typeof opts.info==='undefined') ? name + " Object" : opts.info;
-        	meta = new Metadata(opts);
+            opts = (typeof opts!=='undefined') ? opts : {};
+            opts.name = name;
+            opts.info = (typeof opts.info==='undefined') ? name + " Object" : opts.info;
+            meta = new Metadata(opts);
 
-			fn = Interface(name);
-			fn.prototype = Object.create(this);
-			fn.prototype.constructor = fn;
+            fn = Interface(name);
+            fn.prototype = Object.create(this);
+            fn.prototype.constructor = fn;
             fn.prototype.constructor.prototype = fn.prototype;
-			fn.prototype._meta_ = meta;
-			fn.prototype._super_ = function(...args){
-            	parent.call(this);
-            	if(args.length && typeof args[args.length-1]==='function'){
-                	var code = args.pop();
-                	code.call(this, ...args);
-                	this.augment(code, this);
-            	}
-            	return this;
-        	};
+            fn.prototype._meta_ = meta;
+            fn.prototype._super_ = function(...args){
+                parent.call(this);
+                if(args.length && typeof args[args.length-1]==='function'){
+                    var code = args.pop();
+                    code.call(this, ...args);
+                    this.augment(code, this);
+                }
+                return this;
+            };
             fn.prototype.export(this._meta_.ns);
-			return fn;
-		};
+            return fn;
+        };
 
         /**
          * Proxy object for metadata retreival.
          * @param  {object} obj
          * @return {mixed}
          */
-		this.proxy = function(obj){
-			return  new Proxy(obj, {
+        this.proxy = function(obj){
+            return  new Proxy(obj, {
                 get: function(target, name){
                     if(!(name in target)){
                         var metatag = name.replace(/(^_+|_+$)/mg, '');
@@ -181,7 +181,7 @@
                     return target[name];
                 }
             });
-		};
+        };
 
         /**
          * Child object inherits properies from the parent object via mixin.
@@ -189,14 +189,14 @@
          * @param  {object} child
          * @return {object} child
          */
-		this.augment = function(parent, child){
-	        for(let i in parent){
-	            if(parent.hasOwnProperty(i))
-	                child[i] = parent[i];
-	        }
+        this.augment = function(parent, child){
+            for(let i in parent){
+                if(parent.hasOwnProperty(i))
+                    child[i] = parent[i];
+            }
             this.export(this._meta_.ns);
-	        return child;
-	    };
+            return child;
+        };
         this.extend = this.augment;
 
         /**
@@ -204,7 +204,7 @@
          * @param  {object} parent    Parent object that this will inherit from.
          * @return {object}           The redefined context for this object.
          */
-	   	this.inherits = function(parent){
+        this.inherits = function(parent){
             var child;
 
             if(parent instanceof Singleton.constructor ||
@@ -235,37 +235,37 @@
                 child = parent.decendant(this._meta_.name, this._meta_);
                 return new child();
             }
-	        else if(parent.prototype instanceof Quark){
-	        	parent = new parent();
-	        	child = parent.decendant(this._meta_.name, this._meta_);
-	        	return new child();
-	        }
-	        return this.augment(parent, this);
-    	};
-    	this.extends = this.inherits;
+            else if(parent.prototype instanceof Quark){
+                parent = new parent();
+                child = parent.decendant(this._meta_.name, this._meta_);
+                return new child();
+            }
+            return this.augment(parent, this);
+        };
+        this.extends = this.inherits;
 
         /**
          * The implementation for a new object 'class'.
          * @param  {function} mixin    A function that adds functionality and defines the object.
          * @return {function}          The constructor to create the redefined object.
          */
-    	this.define = function(mixin){
-    		var self = this;
-    		var proto = Object.getPrototypeOf(self);
+        this.define = function(mixin){
+            var self = this;
+            var proto = Object.getPrototypeOf(self);
 
-	        proto.constructor = function(...args){
-	            var func = function(...args){self._super_(mixin.bind(self, ...args));};
-	            var fn = Constructor(self._meta_.name, func.bind(...args));
-	            fn.prototype = self;
-	            fn.prototype.constructor = fn;
-	            return new fn(...args);
-	        };
-			proto.constructor = Constructor(this._meta_.name, proto.constructor);
-			proto.constructor.prototype = proto;
+            proto.constructor = function(...args){
+                var func = function(...args){self._super_(mixin.bind(self, ...args));};
+                var fn = Constructor(self._meta_.name, func.bind(...args));
+                fn.prototype = self;
+                fn.prototype.constructor = fn;
+                return new fn(...args);
+            };
+            proto.constructor = Constructor(this._meta_.name, proto.constructor);
+            proto.constructor.prototype = proto;
             proto.export(self._meta_.ns);
-	        return this.constructor;
-    	};
-    	this.implements = this.define;
+            return this.constructor;
+        };
+        this.implements = this.define;
         this.employs = this.define;
 
         /**
@@ -297,8 +297,8 @@
                 _namespaces_.push(dest);
             return dest + '.' + name;
         };
-	};
-	Quark.prototype = new Quark('Quark', {info:'Quark Object'});
+    };
+    Quark.prototype = new Quark('Quark', {info:'Quark Object'});
 
     /**
      * Proton. Base Object for Atomix inheritance.
@@ -312,7 +312,7 @@
      * @return {Singleton}    Base Singleton Object.
      */
     Singleton = (function(){
-        var instance, singleton, s;
+        var instance, singleton, s, fn;
         singleton = Proton.prototype.decendant('Singleton');
         s = new singleton();
 
@@ -355,10 +355,10 @@
         ns = nsref(context, namespaces);
 
         for(var i=0; i<args.length; i++){
-        	if(typeof args[i]==='object')
-        		opts = args[i];
-        	if(typeof args[i]==='function')
-        		implementation = args[i];
+            if(typeof args[i]==='object')
+                opts = args[i];
+            if(typeof args[i]==='function')
+                implementation = args[i];
         }
 
         opts   = (typeof opts==='undefined') ? {} : opts;
@@ -369,7 +369,7 @@
         child.export(ns);
 
         if(typeof implementation!=='undefined')
-        	return child.definition(implementation);
+            return child.definition(implementation);
 
         return child;
     };
@@ -412,7 +412,7 @@
             return nsget(name);
         }
         else if(this.exports.hasOwnProperty(name))
-            return atomix.prototype.exports[name];
+            return this.exports[name];
         else{
             var ns, nspath;
             for(var i=0; i<this.namespaces.length; i++){
