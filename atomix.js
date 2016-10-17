@@ -255,10 +255,10 @@
 
             proto.constructor = function(...args){
                 var func = function(...args){self._super_(mixin.bind(self, ...args));};
-                var fn = Constructor(self._meta_.name, func.bind(...args));
+                var fn = Constructor(self._meta_.name, func.bind(self, ...args));
                 fn.prototype = self;
                 fn.prototype.constructor = fn;
-                return new fn(...args);
+                return new fn();
             };
             proto.constructor = Constructor(this._meta_.name, proto.constructor);
             proto.constructor.prototype = proto;
@@ -435,7 +435,8 @@
      */
     atomix.prototype.build = function(name, ...args){
         var constructor = (_namespace_) ? _namespace_[name] : this.exports[name];
-        return new constructor(...args);
+        constructor.bind(this, ...args);
+        return new constructor();
     };
 
     /**
@@ -446,7 +447,8 @@
      */
     atomix.prototype.autobuild = function(name, ...args){
         var constructor = this.import(name);
-        return new constructor(...args);
+        constructor.bind(this, ...args);
+        return new constructor();
     };
 
     /**

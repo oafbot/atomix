@@ -22,7 +22,7 @@ Atomix.new
 .singleton('Singularity', function(){
     this.test = "Hello Universe.";
     this.run = function(){
-        document.write(this.test);
+        document.write(this.test + "</br>");
     };
     this.run();
 });
