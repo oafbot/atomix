@@ -560,6 +560,12 @@
         return ns[name];
     };
 
+    /* Convenience functions. */
+    atomix.prototype.c     = atomix.prototype.build;     // import and build
+    atomix.prototype.gimp  = atomix.prototype.unpack;    // global import
+    atomix.prototype.limp  = atomix.prototype.import;    // lazy import
+    atomix.prototype.blimp = atomix.prototype.autobuild; // lazy import and build
+
     /*
      * Global convenience functions.
      * Comment out these shortcuts if you desire to
@@ -567,13 +573,9 @@
      */
     declare   = atomix.prototype.new.class;
     namespace = atomix.prototype.namespace;
-    singleton = atomix.prototype.singleton;
+    singleton = atomix.prototype.new.singleton;
 
-    /* Convenience functions. */
-    atomix.prototype.c     = atomix.prototype.build;     // import and build
-    atomix.prototype.gimp  = atomix.prototype.unpack;    // global import
-    atomix.prototype.limp  = atomix.prototype.import;    // lazy import
-    atomix.prototype.blimp = atomix.prototype.autobuild; // lazy import and build
+
 
     /* Global instance of Atomix */
     Atomix             = new atomix();
