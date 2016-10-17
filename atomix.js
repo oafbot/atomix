@@ -369,7 +369,7 @@
         child.export(ns);
 
         if(typeof implementation!=='undefined')
-            return child.definition(implementation);
+            return child.define(implementation);
 
         return child;
     };
