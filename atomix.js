@@ -573,9 +573,7 @@
      */
     declare   = atomix.prototype.new.class;
     namespace = atomix.prototype.namespace;
-    singleton = atomix.prototype.new.singleton;
-
-
+    singleton = atomix.prototype.singleton;
 
     /* Global instance of Atomix */
     Atomix             = new atomix();
