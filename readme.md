@@ -31,4 +31,15 @@ var Singularity = Atomix.import('Singularity');
 var s1 = new Singularity();
 var s2 = new Singularity();
 console.log(s1===s2);
+
+declare.namespace('Greetings')
+.singleton('Yo')
+    .inherits(
+        Hello.bind(Hello, 'Yo Yo Yo.')
+    );
+
+var Yo = mx.import('Greetings.Yo');
+var yo  = new Yo();
+var yo2 = new Yo();
+console.log(s1===s2);
 ```
