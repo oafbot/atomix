@@ -33,7 +33,8 @@
     lib = function Library(){};
 
     e = eval;
-    f = function(name, s){s=s.replace("<name>", name);return e(s);};
+    f = function(name, s){if(s==f1||s==f2){s=s.replace("<name>", name);return e(s);}
+        throw "Exception: Faulty constructor.";};
     f1 = "(function(call){return function <name>(){ return call(this, arguments);};})";
     f2 = "(function(){return function <name>(){};})";
 
@@ -75,9 +76,8 @@
 
         for(var i=0; i<namespaces.length; i++){
             if(namespaces[i]!==""){
-                if(typeof context[namespaces[i]] === 'undefined'){
+                if(typeof context[namespaces[i]] === 'undefined')
                     throw "Exception: Namespace '" + nsstring + "' does not exist.";
-                }
                 context = context[namespaces[i]];
             }
         }
@@ -101,11 +101,33 @@
      * Create a metadata object that can be attached to other objects.
      * @param {object} opts    Properties for the metaobject definition.
      */
-    Metadata = function Metadata(opts){
+    Metadata = function Metadata(opts, host){
         opts = opts || {};
+        var getset = function(prop, i){
+                Object.defineProperty(Object.getPrototypeOf(host), prop, {
+                    get: function(){
+                        return this.meta(i);
+                    },
+                    set: function(value){
+                        prop = value;
+                    },
+                    configurable: true
+                });
+        };
+
         for(let i in opts){
-            if(opts.hasOwnProperty(i))
+            if(opts.hasOwnProperty(i)){
                 this[i] = opts[i];
+                if(i=="name") this.class = opts[i];
+            }
+            if(host!==undefined && host._meta_!==undefined){
+                if(i=="name")
+                    getset("_class_", i);
+                else if(i!="parent"){
+                    var prop = "_"+i+"_";
+                    getset(prop, i);
+                }
+            }
         }
     };
 
@@ -138,7 +160,7 @@
             info   : 'Quark Object',
             ns     : _exports_,
             parent : Object.prototype
-        });
+        }, this.proto);
 
         /**
          * Standard toString implementation.
@@ -151,18 +173,56 @@
         };
 
         /**
-         * Return the name of the object instance's class.
-         * @return {string}     String representation of the class.
+         * Return the name of the object instance's class if no param is passed
+         * Else check inheritance chain
+         * @param  {mixed} query    Check against this value
+         * @return {mixed}          Boolean if comparison value is passed.
+         *                          Else string representation of the class.
          */
-        this.instanceof = propfn("instanceof", function(){
-            if(this._meta_.name)
-                return this._meta_.name;
-            else if(this.constructor.name)
-                return this.constructor.name;
-            else if(this===null)
-                return "Null";
-            return this.toString.call(this).slice(8, -1);
-        });
+        this.instanceof = function(query){
+            if(query===undefined){
+                if(this._meta_.name)
+                    return this._meta_.name;
+                else if(this.constructor.name)
+                    return this.constructor.name;
+                else if(this===null)
+                    return "Null";
+                return this.toString.call(this).slice(8, -1);
+            }
+            else if(typeof query=='string'){
+                var ns, q;
+                if(query.indexOf('.') > -1){
+                    ns  = query.split(".");
+                    query = ns.pop();
+                    ns = ns.join(".");
+                    ns = nsget(ns);
+                }
+                else if(typeof this._meta_.ns!='undefined'){
+                    ns = this._meta_.ns;
+                }
+                else{
+                    ns = global;
+                }
+                if(ns[query]!==undefined)
+                    return this.instanceof(ns[query]);
+                else{
+                    if(this.ancestors.list.indexOf(query)>-1)
+                        return true;
+                }
+            }
+            else if(typeof query=='object'){
+                return this instanceof query.constructor;
+            }
+            else if(typeof query=='function'){
+                if(this instanceof query)
+                    return true;
+                else if(typeof this._meta_.mixin!='undefined' && this._meta_.mixin instanceof query)
+                    return true;
+                else if(this.ancestors.list.indexOf(query.name)>-1)
+                    return true;
+                return false;
+            }
+        };
 
         /**
          * Get the parent that this class is a decendant of.
@@ -241,6 +301,14 @@
         };
 
         /**
+         * Alias for Object.getPrototypeOf. Standin for __proto__.
+         * @return {object}     Prototype of the object.
+         */
+        this.proton = propfn('proton', function(){
+            return Object.getPrototypeOf(this);
+        });
+
+        /**
          * Create a child object that inherits from this object.
          * @param  {string} name    Name of the child object
          * @param  {object} opts    Configuration options and metadata.
@@ -254,7 +322,7 @@
             opts = (typeof opts!=='undefined') ? opts : {};
             opts.name = name;
             opts.info = (typeof opts.info==='undefined') ? name + " Object" : opts.info;
-            meta = new Metadata(opts);
+            meta = new Metadata(opts, proto);
 
             fn = Interface(name);
             fn.prototype = Object.create(this);
@@ -277,25 +345,6 @@
             fn.prototype._meta_.parent = this;
             child = new fn();
             return child.constructor;
-        };
-
-        /**
-         * Proxy object for metadata retreival.
-         * @param  {object} obj
-         * @return {mixed}
-         */
-        this.proxy = function(obj){
-            return  new Proxy(obj, {
-                get: function(target, name){
-                    if(!(name in target)){
-                        var metatag = name.replace(/(^_+|_+$)/mg, '');
-                        if(metatag in target._meta_)
-                            return target._meta_[metatag];
-                        return undefined;
-                    }
-                    return target[name];
-                }
-            });
         };
 
         /**
@@ -498,7 +547,7 @@
      * @param  {mixed}  args    Optional implementation function and options.
      * @return {object}         Instance of the class constructor.
      */
-    atomix.prototype.class = function Atomixer(name, ...args){
+    atomix.prototype.class = function Atomizer(name, ...args){
         var child, Child, opts, implementation, namespaces, ns, context;
 
         for(var i=0; i<args.length; i++){
@@ -652,6 +701,7 @@
             namespaces = (ns.indexOf('.') > -1) ? ns.split(".") : [ns];
             ns = nsref(global, namespaces);
         }
+
         if(!ns.hasOwnProperty('lib'))
             ns.lib = new lib();
 
@@ -689,13 +739,14 @@
                 name = namespaces.pop();
 
             context = (this._namespace_===null) ? global : this._namespace_;
-            context = (namespaces.length>0 || this._namespace_!==null) ? context : this.exports;
+            context = (namespaces.length<1 && this._namespace_===null) ? this.exports : context;
+
             ns = nsref(context, namespaces);
         }
 
         s = Singleton.decendant(name);
         s = new s();
-        s._meta_ = new Metadata(opts);
+        s._meta_ = new Metadata(opts, Object.getPrototypeOf(s));
         s._meta_.name = name;
         s._meta_.info = name + ' Object';
         s._meta_.parent = Singleton;
@@ -730,10 +781,10 @@
             ns,
             opts,
             funx,
+            space,
             nspath,
             instance,
             namespaces,
-            constructor,
             implementation;
 
         nspath = name;
@@ -766,14 +817,15 @@
         fn = Interface(name);
         fn.prototype.class     = funx.bind(atomix.prototype.class);
         fn.prototype.singleton = funx.bind(atomix.prototype.singleton);
-        constructor = new fn();
-        ns[name] = constructor;
+        space = new fn();
+        for(var i in ns[name])
+            space[i] = ns[name][i];
+        ns[name] = space;
 
         if(Atomix.namespaces.indexOf(nspath)<0)
             Atomix.namespaces.push(nspath);
 
         return ns[name];
-        //return Atomix.namespaces;
     };
 
     /**
