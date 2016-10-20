@@ -209,6 +209,7 @@
                     if(this.ancestors.list.indexOf(query)>-1)
                         return true;
                 }
+                return false;
             }
             else if(typeof query=='object'){
                 return this instanceof query.constructor;
@@ -862,9 +863,12 @@
     };
 
     /* Freeze global instance of Atomix Object. */
+    //Object.seal(quark);
+    //Object.seal(Quark);
+    Object.freeze(proton);
     Object.freeze(Proton);
-    //Object.freeze(Atomix);
-    //Object.freeze(Atomix._meta_);
+    Object.seal(Atomix);
+    Object.seal(Atomix._meta_);
     Object.preventExtensions(Atomix);
 
     global.Interface = Interface;

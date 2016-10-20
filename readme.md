@@ -4,6 +4,7 @@
 
 ```javascript
 Atomix
+.ns('Salutations')
 .class('Hello')
     .inherits(Proton)
     .implements(function(say){
@@ -20,7 +21,7 @@ var hello = new Hello('Hello world.');
 
 Atomix.new
 .singleton('Singularity', function(){
-    this.test = "Hello Universe.";
+    this.test = "Hello universe.";
     this.run = function(){
         document.write(this.test + "</br>");
     };
@@ -33,13 +34,13 @@ var s2 = new Singularity();
 console.log(s1===s2);
 
 
-declare.namespace('Greetings')
+declare.namespace('Salutations')
 .singleton('Yo')
     .inherits(
         Hello.bind(Hello, 'Yo Yo Yo.')
     );
 
-var Yo = mx.import('Greetings.lib.Yo');
+var Yo = mx.import('Salutations.lib.Yo');
 var yo  = new Yo();
 var yo2 = new Yo();
 console.log(s1===s2);
