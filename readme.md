@@ -31,7 +31,7 @@ Atomix.new
 var Singularity = Atomix.import('Singularity');
 var s1 = new Singularity();
 var s2 = new Singularity();
-console.log(s1===s2);
+console.log('singleton:', s1===s2);
 
 
 declare.namespace('Salutations')
@@ -43,5 +43,5 @@ declare.namespace('Salutations')
 var Yo = mx.import('Salutations.lib.Yo');
 var yo  = new Yo();
 var yo2 = new Yo();
-console.log(s1===s2);
+console.log('singleton:', s1===s2);
 ```
