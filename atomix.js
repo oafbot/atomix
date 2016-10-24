@@ -161,22 +161,13 @@
             });
         }).bind(this);
 
-        this.init = function(){
-            if(this instanceof this.constructor && this.constructor.type=='abstract'){
-                throw "No instacnces of abstract classes can be constructed.";
-            }
-            this._meta_.type='abstract';
-            let t = this.gettype();
-            if(!t) this.constructor.type='abstract';
-        };
-
         /**
          * Sort the constructor arguments by type.
          * @param  {array}  args    The arguments passed into the constructor.
          * @return {object}         Object containing the sorted constructor arguments.
          */
         this.args = function(){
-            var options, name, implemantation, namespaces, ns, path, resolve, args;
+            var options, name, implementation, namespaces, ns, path, resolve, args;
 
             args = Array.from(arguments);
 
@@ -192,7 +183,7 @@
                 if(typeof args[i]==='object')
                     options = args[i];
                 if(typeof args[i]==='function')
-                    implemantation = args[i];
+                    implementation = args[i];
                 if(typeof args[i]==='string')
                     name = args[i];
             }
@@ -208,7 +199,7 @@
                 name           : name,
                 path           : path,
                 options        : options,
-                implemantation : implemantation
+                implementation : implementation
             };
         };
 
@@ -398,15 +389,17 @@
             fn.prototype.constructor.prototype = fn.prototype;
             fn.prototype._meta_ = meta;
             fn.prototype._super_ = function(...args){
-                parent.bind(this);
-                var p = new parent();
+                var proto, p, code;
+                parent = parent.bind(this);
+                p = new parent();
                 if(args.length && typeof args[args.length-1]==='function'){
-                    var code = args.pop();
+                    code = args.pop();
                     code.call(this, ...args);
                     this.augment(code, this);
                 }
-                var proto = Object.getPrototypeOf(this);
+                proto = Object.getPrototypeOf(this);
                 proto._meta_.parent = p;
+                //this.init(...args);
                 return this;
             };
             fn.prototype.export(this._meta_.ns);
@@ -426,9 +419,11 @@
             for(let i in parent){
                 if(!child.hasOwnProperty(i) && typeof child[i]=='undefined')
                     if(i!=='_meta_')
-                       child[i] = parent[i];
+                       proto[i] = parent[i];
+                if(i=='init' && !proto.hasOwnProperty(i))
+                    proto[i] = parent[i];
             }
-            this.export(this._meta_.ns);
+            child.export(child._meta_.ns);
             if(typeof parent!=='function')
                 child._meta_.mixin = parent;
             return child;
@@ -444,17 +439,17 @@
             var child, mixed, proto, instance;
 
             if(this instanceof Singleton.constructor){
-                mixed = this;
-                proto = Object.getPrototypeOf(mixed);
-                proto = this.augment(parent.prototype, proto);
+                proto = Object.getPrototypeOf(this);
 
-                if(typeof parent==='function'){
-                    instance = new parent();
-                    mixed = new proto.constructor();
-                    mixed = this.augment(instance, mixed);
+                if(typeof parent==='object'){
+                    proto = proto.augment(parent, proto);
                 }
-                proto._meta_.mixin  = instance;
-                return mixed;
+                else if(typeof parent==='function'){
+                    proto.constructor = proto.define(parent);
+                    proto = proto.augment(parent, proto);
+                }
+                proto._meta_.mixin = parent;
+                return proto;
             }
 
             if(parent instanceof Singleton.constructor ||
@@ -508,17 +503,26 @@
             var proto  = Object.getPrototypeOf(self);
             var parent = self.parent;
 
+            if(this.instanceof(Singleton)){
+                return atomix.prototype.singleton.call(self, self._meta_.name, mixin).constructor;
+            }
+
             proto.constructor = function(...args){
-                var func = function(...args){self._super_(mixin.bind(self, ...args));};
-                var fn = Constructor(self._meta_.name, func.bind(self, ...args));
+                var func, fn;
+                func = function(...args){self._super_(mixin.bind(self, ...args));};
+                fn = Constructor(self._meta_.name, func.bind(self,...args));
                 fn.prototype = self;
                 fn.prototype.constructor = fn;
                 fn.prototype.constructor.prototype = self;
-                return new fn();
+                self = new fn();
+                if(self.init!==undefined) //self.hasOwnProperty('init') || fn.prototype.hasOwnProperty('init'))
+                    self.init.call(self, ...args);
+                return self;
             };
             proto.constructor = Constructor(this._meta_.name, proto.constructor);
             proto.constructor.prototype = proto;
             proto.export(self._meta_.ns);
+
             return self.constructor;
         };
         this.implements = this.define;
@@ -571,6 +575,13 @@
         };
 
         this.init();
+    };
+
+    Quark.prototype.init = function(){
+        if(this instanceof this.constructor && this.constructor.type=='abstract')
+            throw "No instacnces of abstract classes can be constructed.";
+        this._meta_.type='abstract';
+        if(!this.gettype()) this.constructor.type='abstract';
     };
     quark = new Quark('Quark', {info:'Quark Object'});
 
@@ -651,7 +662,7 @@
         child  = new Child();
 
         child.export(ns);
-        this.export(ns, name);
+        atomix.prototype.export(ns, name);
 
         if(typeof implementation!=='undefined')
             return child.define(implementation);
@@ -744,7 +755,7 @@
      */
     atomix.prototype.build = function(name, ...args){
         var constructor = (_nmsp_) ? _nmsp_[name] : this.exports[name];
-        constructor.bind(this, ...args);
+        constructor = constructor.bind(this, ...args);
         return new constructor();
     };
 
@@ -756,7 +767,7 @@
      */
     atomix.prototype.autobuild = function(name, ...args){
         var constructor = this.import(name);
-        constructor.bind(this, ...args);
+        constructor = constructor.bind(this, ...args);
         return new constructor();
     };
 
@@ -816,13 +827,16 @@
      * @return {object}                     New object derived from the base singleton.
      */
     atomix.prototype.singleton = function(name, ...args){
-        var s, fn, funx, constructor, opts, implementation, ns, context, namespaces;
+        var s, fn, funx, constructor, opts, implementation, ns, context, namespaces, instance;
 
         for(var i=0; i<args.length; i++){
             if(typeof args[i]==='object')
-                opts = args[i];
+                opts = args.splice(i, 1)[0];
+        }
+
+        for(var i=0; i<args.length; i++){
             if(typeof args[i]==='function')
-                implementation = args[i];
+                implementation = args.splice(i, 1)[0];
         }
 
         opts = (typeof opts==='undefined') ? {} : opts;
@@ -836,7 +850,7 @@
             if(namespaces.length>0)
                 name = namespaces.pop();
 
-            context = (this.nmsp===null) ? global : this.nmsp;
+            context = (this.nmsp===null || this.nmsp===undefined) ? global : this.nmsp;
             context = (namespaces.length<1 && this.nmsp===null) ? this.exports : context;
             ns = nsref(context, namespaces);
         }
@@ -850,13 +864,22 @@
         s._meta_.type   = 'singleton';
 
         funx = (function(){
-            var instance;
-            return function(){
+            var instance, imp, fn;
+            return function(...args){
                 if(typeof instance!=='undefined')
                     return instance;
                 instance = this;
-                if(implementation)
-                    implementation.call(instance);
+
+                if(implementation){
+                    //implementation.call(instance, ...args)
+                    implementation = implementation.bind(implementation, ...args);
+                    imp = new implementation();
+                    if(imp.hasOwnProperty('init'))
+                        imp.init.call(imp, ...args);
+                    instance = instance.augment(imp, instance);
+                    return instance;
+                }
+                return instance;
             };
         });
 
@@ -864,9 +887,17 @@
         fn.prototype = s;
         fn.prototype.constructor = Constructor(name, funx());
         fn.prototype.constructor.prototype = s;
-        fn.prototype.export(ns);
+        //fn.bind(fn, ...args);
+        instance = new fn();
+        // fn.prototype = instance;
+        // fn.prototype.constructor = Constructor(name, funx());
+        // fn.prototype.constructor.prototype = instance;
 
-        return new fn();
+        // if(instance.init!==Quark.prototype.init){
+        //     instance.init();
+        // }
+        instance.export(ns);
+        return instance;
     };
 
     /**
@@ -905,7 +936,7 @@
             opts.ns = ns[name];
             opts.type = 'namespace';
 
-            instance = this.call(this, classname, opts, implementation);
+            instance = this.call(atomix.prototype, classname, opts, implementation);
 
             if(ns[name]!==_exports_)
                 delete _exports_[classname];
@@ -916,14 +947,19 @@
         fn = Interface(name);
         fn.prototype.class     = funx.bind(atomix.prototype.class);
         fn.prototype.singleton = funx.bind(atomix.prototype.singleton);
+        fn.prototype.namespace = funx.bind(atomix.prototype.namespace);
+        fn.prototype.static    = funx.bind(atomix.prototype.static);
+        // fn.prototype.ns        = funx.bind(atomix.prototype.ns);
+
         space = new fn();
-        for(var i in ns[name])
-            space[i] = ns[name][i];
+        for(var i in ns[name]){
+            if(ns[name].hasOwnProperty(i))
+                space[i] = ns[name][i];
+        }
         ns[name] = space;
 
-        if(Atomix.namespaces.indexOf(nspath)<0)
-            Atomix.namespaces.push(nspath);
-
+        if(atomix.prototype.namespaces.indexOf(nspath)<0)
+            atomix.prototype.namespaces.push(nspath);
         return ns[name];
     };
 
@@ -940,6 +976,12 @@
         return ns[name];
     };
 
+    /**
+     * Parse a string, object, or a constructor into a class, string or constructor
+     * @param  {mixed} _class_    Class representation: object, function or string.
+     * @param  {string} _type_    Type to return... String, object or function.
+     * @return {mixed}            The representation of the class.
+     */
     atomix.prototype.parse = function(_class_, _type_){
         if(typeof _class_==="function"){
             if(_type_===undefined || _type_=='constructor' || _type_=='function')
@@ -966,19 +1008,35 @@
         throw "Exception: Unknown class.";
     };
 
-    atomix.prototype.static = function(_class_, name, ...args){
-        var f, fn, i, a, n;
-        if(true===(this instanceof global.constructor || this instanceof atomix.prototype.static)){
-            throw "No new instacnces of static classes may be constructed.";
+    /**
+     * Create a static class.
+     * @param  {string} name       Name to be assigened to the class
+     * @param  {mixed}  _class_    Optional class to be derived from.
+     * @param  {mixed}  args       Optional parameters for initialization.
+     * @return {function}          Instance of the static class.
+     */
+    atomix.prototype.static = function(name, _class_, ...args){
+        var f, fn, i, a, n, nonstat, atmx, error;
+        atmx  = atomix.prototype;
+        error = "Exception: New instances of static classes may not be constructed.";
+
+        if(_class_===undefined || _class_===null || _class_===''){
+            nonstat = atomix.prototype.class(name, ...args);
+            _class_ = nonstat.constructor;
         }
-        else if(true===this instanceof ClassFactory || true===this instanceof atomix){
+
+        if(true===(this instanceof global.constructor || this instanceof atmx.static)){
+            throw error;
+        }
+        else if(true===this instanceof ClassFactory || this===atmx){
             try{
                 if(false===this.instanceof(_class_)){
                     f = Atomix.parse(_class_);
-                    f.bind(f, ...args);
+                    f = f.bind.apply(f, [f].concat(args));
                     i = new f();
+                    i = Object.create(i);
                     f = i.decendant(i.name, {type:'static'});
-                    f.bind(f, ...args);
+                    f = f.bind(f, ...args);
                     i = new f();
                     //a = this.args(...args);
                     name = name || i.constructor.name;
@@ -991,16 +1049,26 @@
 
                     n = new fn();
                     n.constructor = function(){
-                        throw "No new instances of static classes may be constructed.";
+                       throw error;
+                    };
+                    n.init = i.init;
+                    f = function(...a){
+                        if((this!==undefined && this.constructor===f) || (this===f && this.constructor===f))
+                            throw error;
+                        else if(a.length==1 && a[0]===null)
+                            return  n;
+                        else if(n.init!==quark.init)
+                            (a) ? n.init.call(n, ...a) : n.init.call(n, ...args);
+                        return (a) ? atmx.static.call(n, name, fn, ...a) : atmx.static.call(n, name, fn, ...args);
                     };
 
-                    Atomix.export('Atomix.exports.static', name, this.static.bind(n, fn, name, ...args));
-                    return this.static.bind(n, fn, name, ...args);
+                    Atomix.export('Atomix.exports.static', name, f);
+                    return f;
                 }
             }
             catch(e){
                 console.warn(e);
-                return (true===this instanceof _class_) ? this : this.call(global, _class_, name, ...args);
+                return (true===this instanceof _class_) ? this : this.call(global, name, _class_, ...args);
             }
         }
         return this;
@@ -1028,6 +1096,7 @@
     Atomix.nmsp           = _nmsp_;
     Atomix.namespaces     = _spaces_;
     mx                    = Atomix;
+    atomix.prototype      = Atomix;
 
     Factory =
     Atomix.class('Factory')
@@ -1057,6 +1126,7 @@
         def.singleton = Atomix.new.singleton.bind(Atomix);
         def.namespace = Atomix.namespace.bind(Atomix);
         def.static    = Atomix.static.bind(Atomix);
+        def.ns        = Atomix.ns.bind(Atomix);
 
         fabrik = function(){
             return factory.augment(def, factory);

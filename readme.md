@@ -7,11 +7,14 @@ Atomix
 .ns('Salutations')
 .class('Hello')
     .inherits(Proton)
-    .implements(function(say){
+    .implements(function(p){
+        this.init = function(p){
+            this.run(p);
+        };
+
         this.run = function(p){
             document.write(p + "</br>");
         };
-        this.run(say);
     }
 );
 
@@ -22,10 +25,8 @@ var hello = new Hello('Hello world.');
 Atomix.new
 .singleton('Singularity', function(){
     this.test = "Hello universe.";
-    this.run = function(){
-        document.write(this.test + "</br>");
-    };
-    this.run();
+    this.init = function(){this.run();};
+    this.run  = function(){document.write(this.test + "</br>");};
 });
 
 var Singularity = Atomix.import('Singularity');
@@ -36,12 +37,22 @@ console.log('singleton:', s1===s2);
 
 declare.namespace('Salutations')
 .singleton('Yo')
-    .inherits(
-        Hello.bind(Hello, 'Yo Yo Yo.')
-    );
+    .inherits(Hello);
 
-var Yo = mx.import('Salutations.lib.Yo');
-var yo  = new Yo();
+var Yo  = mx.import('Salutations.lib.Yo');
+var yo  = new Yo('Yo yo yo.');
 var yo2 = new Yo();
 console.log('singleton:', s1===s2);
+
+
+declare
+.ns('Salutations')
+.class('Hola')
+    .inherits(Singleton)
+    .implements(Hello);
+
+var Hola  = mx.import('Hola');
+var hola1 = new Hola('Hola mundo');
+var hola2 = new Hola();
+console.log('singleton:', hola1===hola2);
 ```
