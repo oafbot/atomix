@@ -766,8 +766,6 @@
 
         p = atomix.prototype.process(name, args);
 
-        console.log(p)
-
         s = Singleton.decendant(p.name);
         s = new s();
         s._meta_        = new Metadata(p.opts, Object.getPrototypeOf(s));
@@ -975,7 +973,6 @@
             return atomix.prototype.ns(ns);
         }
         catch(e){
-            //console.warn(e);
             nspath     = name;
             namespaces = name.indexOf('.') > -1 ? name.split(".") : [name];
             name       = namespaces.pop();
