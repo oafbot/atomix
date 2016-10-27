@@ -53,16 +53,6 @@
     _nmsp_    = null;
     _spaces_  = [];
 
-    quarklike = function(o){
-        if(o instanceof Quark ||
-           o instanceof lib   ||
-           o instanceof util  ||
-           o instanceof exp   ){
-            return true;
-        }
-        return false;
-    };
-
     /**
      * Recursevely register the lookup paths for the namespace up to the global scope.
      * @param  {object} ns    The namespaced object.
@@ -247,6 +237,10 @@
             };
         };
 
+        /**
+         * Return type of the constructor.
+         * @return {string}
+         */
         this.gettype = function(){
             return (this.constructor.hasOwnProperty('type')) ? this.constructor.type : null;
         };
@@ -754,7 +748,7 @@
         child  = new Child();
 
         child.export(p.ns);
-        //atomix.prototype.export(ns, name);
+
         if(typeof p.implementation!=='undefined')
             return child.define(p.implementation);
 
@@ -1018,7 +1012,6 @@
             fn.prototype.static    = funx.bind(atomix.prototype.static);
             fn.prototype.path      = nspath;
             fn.prototype.type      = 'namespace';
-            // fn.prototype.ns        = funx.bind(atomix.prototype.ns);
 
             space        = new fn();
             space.path   = nspath;
@@ -1115,7 +1108,7 @@
                     f = i.decendant(i.name, {type:'static'});
                     f = f.bind(f, ...args);
                     i = new f();
-                    //a = this.args(...args);
+
                     name = name || i.constructor.name;
 
                     fn = Constructor(name, i.constructor);
