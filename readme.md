@@ -9,6 +9,8 @@ simply the shorthand form of `Atomix`.
 
 ```javascript
 /* Create a class. */
+var Hello,
+    hello;
 
 Atomix
 .ns('Salutations')
@@ -25,8 +27,8 @@ Atomix
     }
 );
 
-var Hello = Atomix.import('Hello');
-var hello = new Hello('Hello world.');
+Hello = Atomix.import('Hello');
+hello = new Hello('Hello world.');
 ```
 <br>
 
@@ -52,14 +54,20 @@ console.log('singleton:', s1===s2); // true
 
 
 /* Create a singleton class that inherits from another class. */
+var Yo,
+    yo,
+    yo2,
+    Hola,
+    hola1
+    hola2;
 
 declare.namespace('Salutations')
 .singleton('Yo')
     .inherits(Hello);
 
-var Yo  = mx.import('Salutations.lib.Yo');
-var yo  = new Yo('Yo yo yo.');
-var yo2 = new Yo();
+Yo  = mx.import('Salutations.lib.Yo');
+yo  = new Yo('Yo yo yo.');
+yo2 = new Yo();
 console.log('singleton:', yo===yo2); // true
 
 
@@ -73,8 +81,8 @@ declare
 
 mx.from('Salutations').import('Hola').as('Hola');
 
-var hola1 = new Hola('Hola mundo');
-var hola2 = new Hola();
+hola1 = new Hola('Hola mundo');
+hola2 = new Hola();
 console.log('singleton:', hola1===hola2); // true
 ```
 <br>
@@ -86,16 +94,20 @@ By making a class static, creating new instances of the class
 will result in an exception being thrown.
 
 ```javascript
-/* Create a static class */
+/* Create a static class
+ * declare class Hi that inherits from Hello with init value 'Hi Ho!' 
+ */
+var Hi,
+    fail;
 
-Hi = declare.static('Hi', Hello, 'Hi Ho!');
+Hi = declare.static('Hi', Hello, 'Hi Ho!'); // 'Hi Ho!'
 Hi('Hi Ho! Off to work we go!');
 
 /* Attempt to create an instance of a static class.
  * The exception : "New instances of static classes may not be constructed."
  * will be thrown.
  */
-Fail = new Hi("Fail."); // Exception thrown.
+fail = new Hi("Fail."); // Exception thrown.
 ```
 <br>
 
@@ -105,10 +117,13 @@ Namespaces can be declared by using the namespace method.
 
 ```javascript
 /* Create a namespace and then declare new classes in that namespace */
+var space,
+    class1,
+    class2;
 
 space = declare.namespace('Space.lib');
-c1 = space.class('Class1');
-c2 = space.singleton("Class2");
+class1 = space.class('Class1');
+class2 = space.singleton("Class2");
 ```
 <br>
 
@@ -122,11 +137,13 @@ The 'port' class adds some exta functionality aside from importing and exporting
      *   The following statements all import the same calss and
      *   assign it to the variable 'H' within the current scope.
      */
+    var H,
+        s;
 
     /* standard usage */
-    var H = mx.import('Hola');
-    var H = mx.import('Salutations.Hola');
-    var H = mx.import('Salutations.lib.Hola');
+    H = mx.import('Hola');
+    H = mx.import('Salutations.Hola');
+    H = mx.import('Salutations.lib.Hola');
 
     /* using 'from' and 'as' */
     mx.from('Salutations').import('Hola').as('H');
@@ -139,5 +156,5 @@ The 'port' class adds some exta functionality aside from importing and exporting
     s.import('Hola').as('H');
 
     /* standard usage with the 'port' static class */
-    var H = port.in('Salutations.Hola');
+    H = port.in('Salutations.Hola');
 ```
