@@ -1,6 +1,7 @@
 #Atomix, JS inheritance and class emulation.
 
 **Example for standard class declaration.**
+
 The `Atomix`, `mx`, and `declare` classes are interchangable for the most part.
 The declare tool limits functionality to the main business of creating classes,
 by mostly aliasing the built in methods baked into the Atomix class. `mx` is
@@ -27,9 +28,10 @@ Atomix
 var Hello = Atomix.import('Hello');
 var hello = new Hello('Hello world.');
 ```
-
+<br>
 
 **Examples for singleton class declaration.**
+
 Singletons can be created by invoking the 'singleton' method in Atomix or declare.
 They can also be created by inheriting from the singleton object or the Singleton constructor.
 
@@ -75,9 +77,10 @@ var hola1 = new Hola('Hola mundo');
 var hola2 = new Hola();
 console.log('singleton:', hola1===hola2); // true
 ```
-
+<br>
 
 **Example for static class declaration**
+
 Static classes can be declared by calling the 'static' method.
 By making a class static, creating new instances of the class
 will result in an exception being thrown.
@@ -94,9 +97,10 @@ Hi('Hi Ho! Off to work we go!');
  */
 Fail = new Hi("Fail."); // Exception thrown.
 ```
-
+<br>
 
 **Example for namespace declaration**
+
 Namespaces can be declared by using the namespace method.
 
 ```javascript
@@ -106,9 +110,10 @@ space = declare.namespace('Space.lib');
 c1 = space.class('Class1');
 c2 = space.singleton("Class2");
 ```
-
+<br>
 
 **Examples for importing classes**
+
 The 'Atomix' and 'port' classes can both be used for importing and exporting classes.
 The 'port' class adds some exta functionality aside from importing and exporting, such as packaging classes.
 
