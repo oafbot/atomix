@@ -39,6 +39,9 @@ They can also be created by inheriting from the singleton object or the Singleto
 
 ```javascript
 /* Create a singleton class. */
+var Singularity,
+    s1,
+    s2;
 
 Atomix.new
 .singleton('Singularity', function(){
@@ -47,9 +50,9 @@ Atomix.new
     this.run  = function(){document.write(this.test + "</br>");};
 });
 
-var Singularity = Atomix.import('Singularity');
-var s1 = new Singularity();
-var s2 = new Singularity();
+Singularity = Atomix.import('Singularity');
+s1 = new Singularity();
+s2 = new Singularity();
 console.log('singleton:', s1===s2); // true
 
 
@@ -121,7 +124,7 @@ var space,
     class1,
     class2;
 
-space = declare.namespace('Space.lib');
+space  = declare.namespace('Space.lib');
 class1 = space.class('Class1');
 class2 = space.singleton("Class2");
 ```
