@@ -27,6 +27,19 @@ Atomix
     }
 );
 
+/* Here is another way to do the same thing */
+declare.class('Salutations.Hello', function(p)
+    {
+        this.init = function(p){
+            this.run(p);
+        };
+
+        this.run = function(p){
+            document.write(p + "</br>");
+        };
+    }
+);
+
 Hello = Atomix.import('Hello');
 hello = new Hello('Hello world.');
 ```
