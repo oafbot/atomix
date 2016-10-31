@@ -173,4 +173,15 @@ The 'port' class adds some exta functionality aside from importing and exporting
 
     /* standard usage with the 'port' static class */
     H = port.in('Salutations.Hola');
+
+
+    /* chaining imports for readability. */
+    Atomix
+    .from('Space') .import('Class1') .as('c3')
+    .from('Space') .import('Class2') .as('c4')
+                   .import('Hello')  .as('h1');
+
+    port
+    .from('Salutations') .in('Hola') .as('H1')
+    .from('Salutations') .in('Yo')   .as('Space.Class3');
 ```
