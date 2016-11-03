@@ -9,23 +9,25 @@
         f,
         f1,
         f2,
+        mix,
         exp,
         lib,
         util,
         nsref,
         nsget,
+        extend,
         Atomix,
         Ports,
         Quark,
         Proton,
+        Atomixer,
         Singleton,
-        singleton,
         Metadata,
         Interface,
         Constructor,
         Factory,
         ClassFactory,
-        PortsManager,
+        PackageManager,
         mx,
         port,
         quark,
@@ -37,6 +39,8 @@
         singleton,
         quarklike,
         revpath,
+        _sys_,
+        _lib_,
         _nmsp_,
         _util_,
         _stat_,
@@ -47,13 +51,22 @@
     lib  = function Library(){};
     util = function Utility(){};
 
-    e  = eval;
-    f  = function(name, s){if(s==f1||s==f2){s=s.replace("<name>", name);return e(s);}
-        throw "Exception: Faulty constructor.";};
-    f1 = "(function(call){return function <name>(){return call(this, arguments);};})";
-    f2 = "(function(){return function <name>(){};})";
+    extend = function(s){
+        this.prototype = new s();
+        this.prototype.superclass = (function(){return s;})();
+        this.superclass = this.prototype.superclass;
+        return this;
+    };
 
-    _exports_ = new lib();
+    e  = eval;
+    f  = function(name, s){if(s==f1||s==f2){s=s.replace(/<name>/g, name);return e(s);}
+         throw "Exception: Unknown constructor.";};
+    f1 = "(function(){function <name>(){};<name>.extend="+extend.toString()+";return <name>;})";
+    f2 = "(function(call){function <name>(){return call(this, arguments);};<name>.extend="+extend.toString()+";return <name>;})";
+
+    _exports_ = new exp();
+    _sys_     = new lib();
+    _lib_     = new lib();
     _util_    = new lib();
     _stat_    = new lib();
     _nmsp_    = null;
@@ -73,11 +86,11 @@
             if(name==="" && ns.constructor.name=='Library')
                 name = 'lib';
 
-            if(!ns.path && ns.parent && ns.parent.path && name)
-                ns.path = ns.parent.path + "." + name;
+            if(!ns.path && ns.node && ns.node.path && name)
+                ns.path = ns.node.path + "." + name;
 
-            if(ns.parent!==undefined)
-                ns = ns.parent;
+            if(ns.node!==undefined)
+                ns = ns.node;
             else
                 ns = global;
         }
@@ -98,26 +111,28 @@
         path = (context===global) ? "" : context.constructor.name;
 
         for(i=0; i<namespaces.length; i++){
-            if(typeof context[namespaces[i]] === 'undefined'){
-                if(namespaces[i]==='lib'){
-                    context[namespaces[i]] = new lib();
+            if(namespaces[i]!==""){
+                if(typeof context[namespaces[i]] === 'undefined'){
+                    if(namespaces[i]==='lib'){
+                        context[namespaces[i]] = new lib();
+                    }
+                    else if(namespaces[i]==='static'){
+                        context[namespaces[i]] = new lib();
+                    }
+                    else if(namespaces[i]==='util'){
+                        context[namespaces[i]] = new lib();
+                    }
+                    else{
+                        name = Interface(namespaces[i]);
+                        ns = new name();
+                        context[namespaces[i]] = ns;
+                    }
                 }
-                else if(namespaces[i]==='static'){
-                    context[namespaces[i]] = new lib();
-                }
-                else if(namespaces[i]==='util'){
-                    context[namespaces[i]] = new lib();
-                }
-                else{
-                    name = Interface(namespaces[i]);
-                    ns = new name();
-                    context[namespaces[i]] = ns;
-                }
+                path += (context===global) ? namespaces[i] : "." + namespaces[i];
+                context[namespaces[i]].path = path;
+                context[namespaces[i]].node = context;
+                context = context[namespaces[i]];
             }
-            path += (context===global) ? namespaces[i] : "." + namespaces[i];
-            context[namespaces[i]].path   = path;
-            context[namespaces[i]].parent = context;
-            context = context[namespaces[i]];
         }
         return context;
     };
@@ -131,6 +146,7 @@
         var i,
             context    = global,
             namespaces = nsstring.split(".");
+
         for(i=0; i<namespaces.length; i++){
             if(namespaces[i]!==""){
                 if(typeof context[namespaces[i]] === 'undefined')
@@ -169,7 +185,6 @@
             fn = fn.bind(target);
         }
         if(typeof target=='function'){
-            //target.bind(target.prototype);
             fn = fn.bind(target.prototype);
             targeted = target;
         }
@@ -178,10 +193,8 @@
             targeted[name] = fn;
         else if(fn.name && !targeted.hasOwnProperty(name))
             targeted[fn.name] = fn;
-        else if(targeted.hasOwnProperty(name)){
-            //target[name] = target[name].bind();
+        else if(targeted.hasOwnProperty(name))
             return target;
-        }
         else
             throw "Exception: Anonymous function passed. Property assignements needs to be named.";
 
@@ -192,14 +205,14 @@
      * Create a unimplemented constructor for a new named object prototype.
      * @param {string} name    The name of the constructor / new prototype object.
      */
-    Interface = function Interface(name){return f(name, f2)();};
+    Interface = function Interface(name){return f(name, f1)();};
 
     /**
      * Create a constructor with applied context for a new named object prototype.
      * @param {string}   name
      * @param {Function} fn
      */
-    Constructor = function Constructor(name, fn){return (f(name, f1))(fn.apply.bind(fn));};
+    Constructor = function Constructor(name, fn){return (f(name, f2))(fn.apply.bind(fn));};
 
     /**
      * Create a metadata object that can be attached to other objects.
@@ -242,9 +255,8 @@
     /**
      * Base object definition and constructor.
      */
-    Quark = function(){
-        var propfn,
-            _proto_ = Object.getPrototypeOf(this);
+    Quark = function Quark(){
+        var _proto_ = Object.getPrototypeOf(this);
 
         /**
          * Factory for dynamic properties.
@@ -252,10 +264,10 @@
          * @param  {function} getter    function definition for the getter
          * @return {mixed}
          */
-        propfn = (function(prop, getter){
+        this.getprop = (function(prop, getter){
             Object.defineProperty(this, prop, {
                 get: getter,
-                set: function(){prop = propfn.call(this);},
+                set: function(){prop = this.getprop.call(this);},
                 configurable: true
             });
         }).bind(this);
@@ -279,7 +291,7 @@
             args = Array.from(arguments);
 
             resolve = function(name){
-                if(_exports_[name]!==undefined)
+                if(_lib_[name]!==undefined)
                     return 'Atomix.exports.lib.' + name;
                 else if(global[name]!==undefined)
                     return name;
@@ -325,7 +337,7 @@
         this._meta_ = new Metadata({
             name   : 'Quark',
             info   : 'Quark Object',
-            ns     : _exports_,
+            ns     : _sys_,
             parent : Object.prototype,
             type   : 'class'
         }, this.proto);
@@ -409,7 +421,7 @@
          * Get the parent that this class is a decendant of.
          * @return {object}
          */
-        this.parent = propfn("parent", function(){
+        this.parent = this.getprop("parent", function(){
             var o,
                 proto;
 
@@ -425,7 +437,7 @@
          * Get the Inheritance chain.
          * @return {array}
          */
-        this.ancestors = propfn('ancestors', function(){
+        this.ancestors = this.getprop('ancestors', function(){
             var i,
                 o,
                 proto,
@@ -440,7 +452,7 @@
             getlist = (function(prop, getter){
                 Object.defineProperty(this, prop, {
                     get: getter,
-                    set: function(){prop = propfn.call(this);},
+                    set: function(){prop = this.getprop.call(this);},
                     configurable: true
                 });
             }).bind(parents);
@@ -473,7 +485,7 @@
          * Get the name of the class.
          * @return {string}
          */
-        this.name = propfn('name', function(){
+        this.name = this.getprop('name', function(){
             if(typeof this._meta_!=='undefined')
                 return this._meta_.name;
             return this.name;
@@ -493,7 +505,7 @@
          * Alias for Object.getPrototypeOf. Standin for __proto__.
          * @return {object}     Prototype of the object.
          */
-        this.proton = propfn('proton', function(){
+        this.proton = this.getprop('proton', function(){
             return Object.getPrototypeOf(this);
         });
 
@@ -516,15 +528,18 @@
             opts = (typeof opts!=='undefined') ? opts : {};
             opts.name = name;
             opts.info = (typeof opts.info==='undefined') ? name + " Object" : opts.info;
-            opts.type = (typeof opts.type==='undefined') ? "class" : opts.type;
+            opts.type = (typeof opts.type==='undefined') ? "class"   : opts.type;
+            opts.ns   = (typeof opts.ns  ==='undefined') ? undefined : opts.ns;
             meta = new Metadata(opts, proto);
 
             fn = Interface(name);
+            //fn.extend(this.constructor);
             fn.prototype = Object.create(this);
             fn.prototype.constructor = fn;
             fn.prototype.constructor.prototype = fn.prototype;
+
             fn.prototype._meta_ = meta;
-            fn.prototype._super_ = function(...args){
+            fn.prototype.super  = function(...args){
                 var p,
                     code,
                     proto;
@@ -540,8 +555,8 @@
                 proto._meta_.parent = p;
                 return this;
             };
-            fn.prototype.export(this._meta_.ns);
             fn.prototype._meta_.parent = this;
+            fn.prototype.export(this._meta_.ns);
             child = new fn();
             return child.constructor;
         };
@@ -562,12 +577,15 @@
                 if(i=='init' && !proto.hasOwnProperty(i))
                     proto[i] = parent[i];
             }
-            child.export(child._meta_.ns);
             if(typeof parent!=='function')
                 child._meta_.mixin = parent;
+
+            if(child instanceof atomix && !(proto instanceof atomix)){/*pass*/}else{
+                child.export(child._meta_.ns);
+            }
             return child;
         };
-        this.extend = this.augment;
+        //this.extend = this.augment;
 
         /**
          * Define object's inheritance.
@@ -651,11 +669,11 @@
             }
 
             proto.constructor = function(...args){
-                var fn,
-                    func;
+                var f,
+                    fn;
 
-                func = function(...args){self._super_(mixin.bind(self, ...args));};
-                fn = Constructor(self._meta_.name, func.bind(self,...args));
+                f = function(...args){self.super(mixin.bind(self, ...args));};
+                fn = Constructor(self._meta_.name, f.bind(self,...args));
                 fn.prototype = self;
                 fn.prototype.constructor = fn;
                 fn.prototype.constructor.prototype = self;
@@ -682,46 +700,70 @@
         this.export = function(ns){
             var name,
                 dest,
+                proto,
                 scope,
-                nsstring,
-                namsespaces;
+                nsstr,
+                namespaces;
 
-            nsstring = (typeof ns=='object' && ns.constructor.name!="Library"  && ns!=global) ? ns.constructor.name : "";
-            name = this._meta_.name;
-            dest = (typeof ns==='string') ? ns : nsstring;
-            dest = (typeof ns!=='undefined' && typeof ns.path!=='undefined') ? ns.path : dest;
+            proto = Object.getPrototypeOf(this);
 
-            if(this._meta_.ns===undefined){
-                if(typeof ns==='string'){
-                    namespaces = (ns.indexOf('.') > -1) ? ns.split(".") : [ns];
-                    ns = nsref(global, namespaces);
-                    delete _exports_[name];
-                    _nmsp_ = null;
+            nsstr = (typeof ns=='object' && ns.constructor.name!="Library" && ns!=global) ? ns.constructor.name : "";
+            name  = this._meta_.name;
+            dest  = (typeof ns==='string') ? ns : nsstr;
+            dest  = (typeof ns!=='undefined' && typeof ns.path!=='undefined') ? ns.path : dest;
+
+            if(this.name != proto.name){
+                if(this._meta_.ns===undefined){
+                    if(typeof ns==='string'){
+                        namespaces = (ns.indexOf('.') > -1) ? ns.split(".") : [ns];
+                        ns = nsref(global, namespaces);
+
+                        _nmsp_ = null;
+                    }
+                    else if(_nmsp_!==_lib_ && _nmsp_!==null){
+                        ns = _nmsp_;
+                    }
+
+                    if(ns!==undefined)
+                        this._meta_.ns = ns;
+                    else{
+                        this._meta_ns = _lib_;
+                        ns = _lib_;
+                    }
                 }
-                else if(_nmsp_!==_exports_ && _nmsp_!==null){
-                    ns = _nmsp_;
-                    delete _exports_[name];
+                else if(this._meta_.ns){
+                    ns = this._meta_.ns;
                 }
-                if(ns!==undefined)
-                    this._meta_.ns = ns;
+                else{
+                    ns = _lib_;
+                    this._meta_.ns = _lib_;
+                }
             }
-            else if(this._meta_.ns){
-                ns = this._meta_.ns;
-                if(this._meta_.ns!==_exports_){
-                    delete _exports_[name];
-                }
+            else{
+                // if(ns===undefined && this._meta_.ns!==undefined){
+                //     ns = this._meta_.ns;
+                // }
+                // else if(ns!==undefined && this._meta_.ns===undefined){
+                //     this._meta_.ns = ns;
+                // }
+                // else{
+                    //ns = _lib_;
+                    //this._meta_.ns = _lib_;
+                //}
             }
+
 
             ns = (ns.hasOwnProperty('lib')) ? ns.lib : ns;
             ns[name] = this.constructor;
 
-            dest = (ns===_exports_) ? 'Atomix.exports.lib'    : dest;
-            dest = (ns===_util_)    ? 'Atomix.exports.util'   : dest;
-            dest = (ns===_stat_)    ? 'Atomix.exports.static' : dest;
+            dest = (ns===_sys_)  ? 'Atomix.exports.sys'       : dest;
+            dest = (ns===_lib_)  ? 'Atomix.exports.lib'       : dest;
+            dest = (ns===_util_) ? 'Atomix.exports.util'      : dest;
+            dest = (ns===_stat_) ? 'Atomix.exports.stat'      : dest;
             dest = (ns.hasOwnProperty('lib')) ? dest + '.lib' : dest;
-            dest = (dest==="" && ns!==global) ? ".." : dest;
+            dest = (dest==="" && ns!==global) ? "*" : dest;
 
-            if(dest.substring(0, 2)!=='..' && _spaces_.indexOf(dest)<0 && dest!==""){
+            if(dest.substring(0, 1)!=='*' && _spaces_.indexOf(dest)<0 && dest!==""){
                 _spaces_.push(dest);
                 _spaces_.sort();
             }
@@ -730,16 +772,47 @@
                 this._meta_.path = dest + '.' + name;
 
             if(ns.path===undefined)
-                ns.path = (dest!='..') ? dest : "";
+                ns.path = (dest!='*') ? dest : "";
 
-            //console.log(name, this._meta_.ns!==_exports_ , this._meta_.ns, _nmsp_)
+            if(dest.indexOf('*')===0){
+                console.warn("Namespace could not be converted to qualified ns path: " + dest, ns);
+            }
+
+            if(ns!=_nmsp_)
+                _nmsp_ = null;
+
+            if(ns!==_lib_){
+                delete _lib_[name];
+            }
+            else if(ns!==_sys_){
+                delete _sys_[name];
+            }
+            else if(ns!==_util_){
+                delete _util_[name];
+            }
+            else if(ns!==_stat_){
+                delete _stat_[name];
+            }
 
             return dest + '.' + name;
+        };
+
+        /**
+         * Append new methods to the prototype post factum.
+         * @param  {string}   method            The method name.
+         * @param  {function} implementation    The function body of the method.
+         * @return {object}                     Quark descendant object.
+         */
+        this.method = function(method, implementation){
+            if(!this.hasOwnProperty(method))
+                this[method] = implementation;
+            return this;
         };
 
         this.init();
     };
 
+    Quark.extend = extend;
     quark = new Quark('Quark', {info:'Quark Object'});
     Quark.prototype = quark;
 
@@ -747,7 +820,7 @@
      * Proton. Base Object for Atomix inheritance.
      * @type {Proton}
      */
-    Proton = quark.decendant('Proton', {info:'Proton Object', type:'base'});
+    Proton = quark.decendant('Proton', {info:'Proton Object', ns:_sys_, type:'base'});
     proton = new Proton();
     Proton.prototype = proton;
 
@@ -761,7 +834,7 @@
             instance,
             singleton;
 
-        s = Proton.prototype.decendant('Singleton');
+        s = Proton.prototype.decendant('Singleton', {info:'Singleton Object', ns:_sys_, type:'singleton'});
         s = new s();
         s._meta_.type = 'singleton';
 
@@ -790,7 +863,14 @@
      * Atomix constructor.
      * @type {Proton}
      */
-    atomix = proton.decendant('Atomix', {info:'Atomix Object', ns:_util_, type:'utility'});
+    atomix = proton.decendant('Atomix', {info:'Atomix Object', ns:_sys_, type:'utility'});
+    mix    = new atomix();
+    atomix = mix.implements(function(s){
+        atomix.prototype.init = function(s){
+            atomix.prototype.scope = (s===undefined) ? global : s;
+            this._meta_.type = 'utility';
+        };
+    });
 
     /**
      * Derive the name, configuration, namespace, and implementation for the new class.
@@ -838,7 +918,7 @@
         }
         else{
             context = (this.nmsp===null) ? global : this.nmsp;
-            context = (namespaces.length>0 || this.nmsp!==null) ? context : this.exports.lib;
+            context = (namespaces.length>0 || this.nmsp!==null) ? context : _lib_;
             ns      = nsref(context, namespaces);
             opts.ns = ns;
         }
@@ -857,7 +937,7 @@
      * @param  {mixed}  args    Optional implementation function and options.
      * @return {object}         Instance of the class constructor.
      */
-    atomix.prototype.class = function Atomixer(name, ...args){
+    atomix.prototype.class = function(name, ...args){
         var p,
             child,
             Child;
@@ -869,7 +949,7 @@
         child  = new Child();
 
         child.export(p.ns);
-        //atomix.prototype.export(ns, name);
+
         if(typeof p.implementation!=='undefined')
             return child.implements(p.implementation);
         return child;
@@ -889,13 +969,14 @@
             instance;
 
         p = atomix.prototype.process(name, args);
-        s = singleton.decendant(p.name);
+        s = singleton.decendant(p.name, {ns:p.ns});
         s = new s();
         s._meta_        = new Metadata(p.opts, Object.getPrototypeOf(s));
         s._meta_.name   = p.name;
         s._meta_.info   = p.name + ' Object';
         s._meta_.parent = singleton;
         s._meta_.type   = 'singleton';
+        s._meta_.ns     = p.ns;
 
         funx = (function(){
             var fn,
@@ -939,18 +1020,25 @@
         var dest,
             namespaces;
 
-        fn   = (fn===undefined) ? this.exports.lib[name] : fn;
-        dest = (ns===this.exports.lib && typeof ns!=='string') ? "Atomix.exports.lib" : "";
+        if(name===undefined && fn===undefined){
+            return void 0;
+        }
+
+        fn   = (fn===undefined) ? _lib_[name] : fn;
+        dest = (ns===_lib_ && typeof ns!=='string') ? "Atomix.exports.lib" : "";
 
         if(typeof ns==='string'){
             dest = ns;
 
             switch(dest){
-                case 'Atomix.exports.static':
+                case 'Atomix.exports.stat':
                     ns = _stat_;
                     break;
                 case 'Atomix.exports.util':
                     ns = _util_;
+                    break;
+                case 'Atomix.exports.sys':
+                    ns = _sys_;
                     break;
                 default:
                     namespaces = (ns.indexOf('.') > -1) ? ns.split(".") : [ns];
@@ -959,7 +1047,7 @@
             }
         }
 
-        if(this.exports!==ns && _exports_!==ns && _stat_!==ns && _util_!==ns){
+        if(_exports_!==ns && _lib_!==ns && _stat_!==ns && _util_!==ns && _sys_!==ns){
             if(!ns.hasOwnProperty('lib'))
                 ns.lib = new lib();
 
@@ -968,23 +1056,20 @@
             dest = (dest==="" && ns!==global) ? ".." : dest;
             dest += '.lib';
         }
-        else if(_stat_===ns || _util_===ns || _exports_===ns){
+        else if(_stat_===ns || _util_===ns || _lib_===ns || _sys_===ns){
             ns[name] = fn;
         }
-        else if(this.exports===ns){
+        else if(_exports_===ns){
             ns.lib[name] = fn;
         }
         else{
             throw "Exception: Constructor not exported.";
         }
 
-        if(dest.substring(0, 2)!=='..' && this.namespaces.indexOf(dest)<0 && dest!==""){
-            this.namespaces.push(dest);
-            this.namespaces.sort();
+        if(dest.substring(0, 2)!=='..' && _spaces_.indexOf(dest)<0 && dest!==""){
+            _spaces_.push(dest);
+            _spaces_.sort();
         }
-
-        //if(ns!==_exports_)
-        //   delete _exports_[name];
 
         return dest + '.' + name;
     };
@@ -994,29 +1079,73 @@
      * @param  {string} name    Name of object or namespaced path.
      * @return {mixed}          Object or function requested.
      */
-    atomix.prototype.import = function(name){
+    atomix.prototype.in =
+    atomix.prototype.import = function(name, strict){
         var i,
             c,
             f,
             ns,
+            top1,
+            top2,
+            top3,
+            self,
+            scope,
+            exempt,
             nspath,
             dotpath;
 
-        f = function(path){return function(name){ return e('var ' + name + " = "+path+";"); };};
+        self = this;
 
-        /* If the requested import is a namespace */
+        f = function(path){return function(name){
+                var ns,
+                    dir,
+                    spaces,
+                    target;
+
+                dir = name.indexOf(".");
+
+                if(dir>-1 && dir!==0){
+                    ns = atomix.prototype.splitns(name);
+                    target = (ns[0].hasOwnProperty('lib')) ? ns[0].lib : ns[0];
+                    target[ns[1]] = nsget(path);
+                    return Atomix;
+                }
+                else if(dir===0){
+                    spaces   = name.split(".");
+                    name     = spaces.pop();
+                    ns       = nsref(self.scope, spaces);
+                    ns[name] = nsget(path);
+                    if(this instanceof atomix)
+                        return this;
+                    return Atomix;
+                }
+
+                return e('var ' + name + " = " + path + ";(function(a){return a;}).call(this, Atomix);");
+            };
+        };
+
+        if(strict){
+            c = nsget(name);
+            f = f(name);
+            c = append(c, 'as', f);
+            c = append(c, 'import', atomix.prototype.import);
+            c = append(c, 'in',     atomix.prototype.import);
+            return c;
+        }
+
+        /* If the requested import is a global level namespace */
         try{
             if(name.indexOf('.') < 0 && typeof nsget(name)=='object'){
                 c = nsget(name);
                 f = f(name);
                 c = append(c, 'as', f);
                 c = append(c, 'import', atomix.prototype.import);
+                c = append(c, 'in',     atomix.prototype.import);
                 return c;
             }
         }
-        catch(e){
-            /* pass */
-        }
+        catch(e){ /* pass */ }
+
         /* Else if the requested import is a constructor */
         if(name.indexOf('.') > -1){
             try{
@@ -1024,24 +1153,45 @@
                 f = f(name);
                 c = append(c, 'as', f);
                 c = append(c, 'import', atomix.prototype.import);
+                c = append(c, 'in',     atomix.prototype.import);
                 return c;
             }
             catch(e){
                 dotpath = name.split(".");
-                name = dotpath.pop();
-                name = dotpath.join('.') + ".lib." + name;
+                name    = dotpath.pop();
+                exempt  = [
+                    "Atomix.exports.util",
+                    "Atomix.exports.stat",
+                    "Atomix.exports.sys",
+                    "Atomix.exports.lib",
+                    "Atomix.util",
+                    "Atomix.stat",
+                    "Atomix.sys",
+                    "Atomix.lib"
+                ];
+                top1 = dotpath[0];
+                top2 = dotpath[0]+"."+dotpath[1];
+                top3 = dotpath[0]+"."+dotpath[1]+"."+dotpath[2];
+
+                if(top1=="Atomix" && (exempt.indexOf(top2)>=0 || exempt.indexOf(top3)>=0))
+                    name = dotpath.join('.') + "." + name;
+                else
+                    name = dotpath.join('.') + ".lib." + name;
+
                 c = nsget(name);
                 f = f(name);
                 c = append(c, 'as', f);
                 c = append(c, 'import', atomix.prototype.import);
+                c = append(c, 'in',     atomix.prototype.import);
                 return c;
             }
         }
-        else if(_exports_.hasOwnProperty(name)){
-            c = _exports_[name];
+        else if(_lib_.hasOwnProperty(name)){
+            c = _lib_[name];
             f = f('Atomix.exports.lib.'+name);
             c = append(c, 'as', f);
             c = append(c, 'import', atomix.prototype.import);
+            c = append(c, 'in',     atomix.prototype.import);
             return c;
         }
         else{
@@ -1053,6 +1203,7 @@
                     f = f(nspath+"."+name);
                     c = append(c, 'as', f);
                     c = append(c, 'import', atomix.prototype.import);
+                    c = append(c, 'in',     atomix.prototype.import);
                     return c;
                 }
                 if(ns.hasOwnProperty('lib') && ns.lib.hasOwnProperty(name)){
@@ -1060,6 +1211,7 @@
                     f = f(nspath+".lib."+name);
                     c = append(c, 'as', f);
                     c = append(c, 'import', atomix.prototype.import);
+                    c = append(c, 'in',     atomix.prototype.import);
                     return c;
                 }
             }
@@ -1073,13 +1225,57 @@
      * @return {object}         Return namespace with additional functionality.
      */
     atomix.prototype.from = function(path){
-        var c, ns;
+        var i,
+            ns,
+            f1,
+            f2;
+
+        f1 = function(name){
+            var sub,
+                dir,
+                tried,
+                nspath,
+                _nspath;
+
+            sub    = ["lib", "sys", "util", "stat"];
+            nspath = path+"."+name;
+            tried  = [nspath];
+            dir    = path.split(".").pop();
+
+            try{
+                return atomix.prototype.import(nspath, true);
+            }
+            catch(e){
+                //console.warn("Namespace '" + nspath + "' not found.");
+                if(sub.indexOf(dir)<0){
+                    for(i=0; i<sub.length; i++){
+                        _nspath = Atomix.subdir(nspath, sub[i]);
+                        try{
+                             tried.push(_nspath);
+                             return Atomix.new.import(_nspath, true);
+                        }catch(e){
+                            if(i==sub.length-1){
+                                throw "Exception: Namespace '" + nspath + "' does not exit. \nTried:\n" +
+                                tried.join(",\n");
+                            }
+                        }
+                    }
+                }
+                throw "Exception: Namespace '" + nspath + "' does not exit.";
+            }
+        };
+
+        f2 = function(ns, prop){
+            Object.defineProperty(Object.getPrototypeOf(ns), prop, {
+                get: function(){return f1;},
+                set: prop = f2.bind(ns, prop),
+                configurable: true
+            });
+        };
+
         ns = nsget(path);
-        ns = append(ns, 'import', function(name){
-            c = atomix.prototype.import(path+"."+name);
-            //delete ns.import;
-            return c;
-        });
+        f2(ns, 'import');
+        f2(ns, 'in');
         return ns;
     };
 
@@ -1091,7 +1287,7 @@
      */
     atomix.prototype.build = function(name, ...args){
         var constructor;
-        constructor = (_nmsp_) ? _nmsp_[name] : this.exports.lib[name];
+        constructor = (_nmsp_) ? _nmsp_[name] : _lib_[name];
         constructor = constructor.bind(this, ...args);
         return new constructor();
     };
@@ -1117,8 +1313,8 @@
         var prop = 'new';
         Object.defineProperty(this, prop, {
             get: function(){
-                this.nmsp      = null;
-                _nmsp_         = null;
+                this.nmsp = null;
+                _nmsp_    = null;
                 return this;
             },
             set: function(){
@@ -1137,10 +1333,10 @@
         var nsstring,
             namespaces;
 
-        if(ns===null || typeof ns==='undefined' || ns===_exports_){
+        if(ns===null || typeof ns==='undefined' || ns===_lib_){
             _nmsp_ = null;
-            Atomix.nmsp = null;
-            return Atomix;
+            this.nmsp = null;
+            return this;
         }
 
         if(typeof ns==='string'){
@@ -1154,11 +1350,11 @@
 
         if(!ns.hasOwnProperty('lib') && !(ns instanceof lib)){
             ns.lib = new lib();
-            ns.lib.parent = ns;
+            ns.lib.node = ns;
             revpath(ns.lib);
         }
 
-        Atomix.nmsp = ns;
+        this.nmsp = ns;
         _nmsp_ = ns;
 
         return Atomix;
@@ -1217,8 +1413,8 @@
                 atomix.prototype.nmsp = ns[name];
                 instance = this.call(atomix.prototype, classname, opts, implementation);
 
-                if(ns[name]!==_exports_)
-                    delete _exports_[classname];
+                if(ns[name]!==_lib_)
+                    delete _lib_[classname];
 
                 return instance;
             };
@@ -1231,9 +1427,9 @@
             fn.prototype.path      = nspath;
             fn.prototype.type      = 'namespace';
 
-            space        = new fn();
-            space.path   = nspath;
-            space.parent = ns;
+            space      = new fn();
+            space.path = nspath;
+            space.node = ns;
 
             for(i in ns[name]){
                 if(ns[name].hasOwnProperty(i))
@@ -1246,7 +1442,6 @@
                 _spaces_.sort();
             }
 
-            //atomix.prototype.nmsp = null;
             return ns[name];
         }
     };
@@ -1280,6 +1475,18 @@
         name = namespaces.pop();
         ns = nsget(namespaces.join('.'));
         return [ns, name];
+    };
+
+    atomix.prototype.subdir = function(path, dir){
+        var ns,
+            name,
+            namespaces;
+
+        namespaces = path.split(".");
+        name = namespaces.pop();
+        ns   = namespaces.join('.');
+        ns   = ns + "." + dir + "." + name;
+        return ns;
     };
 
     /**
@@ -1338,7 +1545,7 @@
 
         if(_class_===undefined || _class_===null || _class_===''){
             if(this.nmsp===null)
-                atomix.prototype.ns('Atomix.exports.static');
+                atomix.prototype.ns('Atomix.exports.stat');
             c = atomix.prototype.class(name, {type:'static'}, ...args);
             _class_ = c.constructor;
         }
@@ -1383,7 +1590,7 @@
                         return (a) ? atmx.static.call(n, name, fn, ...a) : atmx.static.call(n, name, fn, ...args);
                     };
 
-                    Atomix.export("Atomix.exports.static", name, f);
+                    Atomix.export("Atomix.exports.stat", name, f);
                     return f;
                 }
             }
@@ -1406,30 +1613,40 @@
     atomix.prototype.limp  = atomix.prototype.import;
     atomix.prototype.blimp = atomix.prototype.autobuild;
 
+    atomix.prototype.nmsp              = _nmsp_;
+    atomix.prototype.exports           = _exports_;
+    atomix.prototype.namespaces        = _spaces_;
+    atomix.prototype.exports.sys       = _sys_;
+    atomix.prototype.exports.lib       = _lib_;
+    atomix.prototype.exports.stat      = _stat_;
+    atomix.prototype.exports.util      = _util_;
+    atomix.prototype.exports.path      = "Atomix.exports";
+    atomix.prototype.exports.sys.path  = "Atomix.exports.sys";
+    atomix.prototype.exports.lib.path  = "Atomix.exports.lib";
+    atomix.prototype.exports.stat.path = "Atomix.exports.stat";
+    atomix.prototype.exports.util.path = "Atomix.exports.util";
+    atomix.prototype.exports.sys.node  = atomix.prototype.exports;
+    atomix.prototype.exports.lib.node  = atomix.prototype.exports;
+    atomix.prototype.exports.stat.node = atomix.prototype.exports;
+    atomix.prototype.exports.util.node = atomix.prototype.exports;
+    atomix.prototype.new               = atomix.prototype.reset.call(atomix.prototype);
+
     /* Global instance of Atomix */
-    Atomix                = new atomix();
-    Atomix.nmsp           = _nmsp_;
-    Atomix.namespaces     = _spaces_;
-    Atomix.exports        = new exp();
-    Atomix.exports.lib    = _exports_;
-    Atomix.exports.static = _stat_;
-    Atomix.exports.util   = _util_;
-    Atomix.lib            = Atomix.exports.lib;
-    Atomix.util           = Atomix.exports.util;
-    Atomix.stat           = Atomix.exports.static;
-    Atomix.exports.path   = "Atomix.exports";
-    Atomix.lib.path       = "Atomix.exports.lib";
-    Atomix.stat.path      = "Atomix.exports.static";
-    Atomix.util.path      = "Atomix.exports.util";
-    Atomix.lib.parent     = Atomix.exports;
-    Atomix.stat.parent    = Atomix.exports;
-    Atomix.util.parent    = Atomix.exports;
-    mx                    = Atomix;
-    atomix.prototype      = Atomix;
-    Atomix.new            = Atomix.reset.call(Atomix);
+    Atomix            = new atomix();
+    Atomix.nmsp       = _nmsp_;
+    Atomix.namespaces = _spaces_;
+    Atomix.sys        = Atomix.exports.sys;
+    Atomix.lib        = Atomix.exports.lib;
+    Atomix.util       = Atomix.exports.util;
+    Atomix.stat       = Atomix.exports.stat;
+    Atomix.new        = Atomix.reset.call(Atomix);
+    mx                = Atomix;
+
+    atomix.prototype = Atomix;
+    atomix.prototype.constructor = atomix;
 
     Factory =
-    Atomix.class('Factory', {type:'utility', ns:Atomix.exports.util})
+    Atomix.class('Factory', {type:'utility', ns:_util_})
         .implements(function(){
             this.init = function(factory){
                 if(typeof factory=='function')
@@ -1440,7 +1657,7 @@
     );
 
     ClassFactory =
-    Atomix.class('ClassFactory', {type:'utility', ns:Atomix.exports.util})
+    Atomix.class('ClassFactory', {type:'utility', ns:_util_})
         .inherits(Factory)
         .implements(function(factory){
             return this.init(factory);
@@ -1472,6 +1689,11 @@
             Atomix = Atomix.new;
         };
 
+        /**
+         * Prepare namespace as a package and supply followup functions for chaining import statements.
+         * @param  {[type]} path [description]
+         * @return {[type]}      [description]
+         */
         this.from = function(path){
             var pkg = this.pkg(path);
             return pkg;
@@ -1483,15 +1705,26 @@
          * @return {function}
          */
         this.in = function(path){
-            var c;
+            var i, nspath, sub, tried;
+            sub   = ["lib", "sys", "util", "stat"];
+            tried = [path];
             try{
-                c = nsget(path);
+                return Atomix.new.import(path, true);
             }
             catch(e){
-                c = Atomix.new.import(path);
+                for(i=0; i<sub.length; i++){
+                    nspath = Atomix.subdir(path, sub[i]);
+                    try{
+                         tried.push(nspath);
+                         return Atomix.new.import(nspath, true);
+                    }catch(e){
+                        if(i==sub.length-1){
+                            throw "Exception: Namespace '" + path + "' does not exit. \nTried:\n" +
+                            tried.join(",\n");
+                        }
+                    }
+                }
             }
-
-            return c;
         };
 
         /**
@@ -1601,28 +1834,35 @@
                 j,
                 d,
                 ns,
+                cls,
+                lib,
                 name,
                 prop,
+                libs,
                 dirs,
                 list,
                 index,
                 lookup,
                 twodee;
 
+            lib = Atomix.lib.constructor;
+
             list = function(ns, name){
-                if(ns.hasOwnProperty('lib')){
+                if(ns.hasOwnProperty('lib') && !(ns instanceof lib)){
                     ns = ns.lib;
                     name += ".lib";
                 }
 
-                if(format=='console')
-                    console.info(name);
+                if(format=='console' || format=='stdio'){
+                    console.group(name);
+                    libs += 1;
+                }
 
                 lookup = function(e){return e.namespace==name;};
                 twodee = function(e, i){return e[0]==name;};
 
                 for(prop in ns){
-                    if(ns.hasOwnProperty(prop) && prop!='parent' && prop!='path'){
+                    if(ns.hasOwnProperty(prop) && prop!='node' && prop!='path'){
                         switch(format){
                             case 'flat':
                                 dirs.push(name+"."+prop);
@@ -1644,8 +1884,12 @@
                                 break;
                             case 'stdio':
                             case 'console':
-                                console.log("|-- " + prop);
-                                dirs.push(name+"."+prop);
+                                cls = nsget(name + "." + prop);
+                                console.log("--- "     + prop);
+                                dirs.push(  name + "." + prop);
+                                //console.groupCollapsed("--- " + prop);
+                                //console.log(cls.prototype._type_);
+                                //console.groupEnd();
                                 break;
                             case 'json':
                                 d = dirs.filter(lookup);
@@ -1660,16 +1904,19 @@
                         }
                     }
                 }
+                if(format=='console' || format=='stdio')
+                    console.groupEnd();
                 return dirs;
             };
 
             /* valid params for format: flat, 2d, console, json */
             format = format || 'flat';
             dirs   = (format=='object') ? {} : [];
+            libs   = 0;
 
             if(dir===undefined || dir===null || dir==='' || dir==='*' || !dir){
-                for(i=0; i<Atomix.namespaces.length; i++){
-                    name = Atomix.namespaces[i];
+                for(i=0; i<_spaces_.length; i++){
+                    name = _spaces_[i];
                     ns   = nsget(name);
                     dirs = list(ns, name);
                 }
@@ -1685,10 +1932,16 @@
 
             if(format=='json')
                 return JSON.stringify(dirs);
-            if(format!='console')
+            if(format!='console' && format!='stdio')
                 return dirs;
+
+            console.groupCollapsed(dirs.length + " import " + (dirs.length>1 ? "paths" : "path") + " from " +
+                                   libs + " " + (libs>1 ? "libraries" : "library"));
+            for(i=0; i<dirs.length; i++)
+                console.log(dirs[i]);
+            console.groupEnd();
+            //console.dir(dirs);
             return dirs.length;
-            //return void 0;
         };
 
         /**
@@ -1696,14 +1949,33 @@
          * @param  {array} list    List of constructors in string representation.
          * @return {object}        New package with all the constructors.
          */
-        this.pkg = function(list, name){
+        this.pkg = function(list, name, exclude){
             var i,
                 c,
                 n,
+                self,
                 pack,
                 Package,
-                nsstring,
-                self = this;
+                nsstring;
+
+            self = this;
+
+            exclude===undefined ?
+            exclude = [
+               'Atomix.exports.sys.Proton',
+               'Atomix.exports.sys.Singleton',
+               'Atomix.exports.sys.Atomix',
+               'Atomix.exports.util.Factory',
+               'Atomix.exports.util.ClassFactory',
+               'Atomix.exports.util.PortsManager',
+            ] :
+            exclude=== null  ||
+            exclude===''     ||
+            exclude==='none' ||
+            exclude===0      ||
+            exclude===false  ?
+            exclude = []     :
+            exclude;
 
             if(typeof list=='string')
                 nsstring = list;
@@ -1711,8 +1983,12 @@
             Package = function Package(){};
             Package.prototype.import = function(path){
                 var constructor;
+                path = (nsstring) ? nsstring + "." + path : path;
                 constructor = self.in(path);
-                constructor.make = function(...args){constructor.bind(constructor, ...args); return new constructor();};
+                constructor.make = function(...args){
+                    constructor.bind(constructor, ...args);
+                    return new constructor();
+                };
                 return constructor;
             };
             Package.prototype.export = function(path, cls){self.out(path, cls, false);};
@@ -1763,9 +2039,11 @@
                 list = this.ls(list, 'flat');
 
             for(i=0; i<list.length; i++){
-                c = nsget(list[i]);
-                n = list[i].split('.').pop() || c.name;
-                pack[n] = nsget(list[i]);
+                if(exclude.indexOf(list[i])<0){
+                    c = nsget(list[i]);
+                    n = list[i].split('.').pop() || c.name;
+                    pack[n] = nsget(list[i]);
+                }
             }
 
             return pack;
@@ -1797,23 +2075,65 @@
         this.c = this.build;
     };
 
-    declare.singleton('PortsManager', Ports);
-    port = Atomix.autobuild('PortsManager');
+    declare.singleton('PackageManager', {ns:_util_}, Ports);
+    PackageManager = Atomix.util.PackageManager;
+    PackageManager.bind(Atomix);
+    port = new PackageManager();
 
-    /* Freeze global instance of Atomix Object. */
-    Object.freeze(proton);
-    Object.freeze(Proton);
-
-    //Object.seal(Atomix);
-    //Object.seal(Atomix._meta_);
-    //Object.preventExtensions(Atomix);
-
-    global.Interface = Interface;
-    global.Atomix    = Atomix;
+    // global.Interface = Interface;
+    // global.boundIF   = Constructor;
+    // global.Quark     = Quark;
     global.Proton    = Proton;
     global.singleton = singleton;
     global.Singleton = Singleton;
-    global.mx        = mx;
     global.declare   = declare;
-    global.port      = port;
+    global.ports     = port;
+    global.quark     = quark;
+    global.mx        = mx;
+
+    Atomixer = atomix.bind(Atomix);
+    Object.defineProperty(Atomixer, 'name', {value:Atomix.name, writable:true});
+
+    global.Atomix = (function(){
+        var i, self;
+        self = this;
+
+        for(i in self)
+            Atomixer[i] = Atomix[i];
+
+        for(i in self._meta_)
+            Atomixer["_" + i + "_"] = Atomix.meta(i);
+
+        Atomixer.new       = Atomix.new;
+        Atomixer.ancestors = Atomix.ancestors;
+        Atomixer.name      = Atomix.name;
+        Atomixer.parent    = Atomix.parent;
+        Atomixer.proton    = Atomix.proton;
+
+        Atomixer.namespaces = _spaces_;
+        Atomixer.sys        = _sys_;
+        Atomixer.lib        = _lib_;
+        Atomixer.util       = _util_;
+        Atomixer.stat       = _stat_;
+
+        return Atomixer;
+    }).call(Atomix);
+
+    // global.Atomix = new Proxy(global.Atomix, {
+    //     construct: function(target, args){
+    //       throw "Exception: New instances of static classes may not be constructed.";
+    //     }
+    //     get:
+    // });
+    //global.Atomix.prototype = global.Atomix;
+
+    Object.defineProperty(global, 'Atomix', {configurable: false});
+
+
+    /* Freeze global instance of Atomix Object. */
+    // Object.freeze(proton);
+    // Object.freeze(Proton);
+    // Object.seal(global.Atomix);
+    // Object.seal(global.Atomix._meta_);
+    // Object.preventExtensions(global.Atomix);
 })(this);

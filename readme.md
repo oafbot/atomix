@@ -175,7 +175,7 @@ The 'port' class adds some exta functionality aside from importing and exporting
     H = port.in('Salutations.Hola');
 
 
-    /* chaining imports for readability. */
+    /* imports statements can be chained for readability. */
     Atomix
     .from('Space') .import('Class1') .as('c3')
     .from('Space') .import('Class2') .as('c4')
@@ -183,5 +183,6 @@ The 'port' class adds some exta functionality aside from importing and exporting
 
     port
     .from('Salutations') .in('Hola') .as('H1')
-    .from('Salutations') .in('Yo')   .as('Space.Class3');
+    .from('Salutations') .in('Yo')   .as('Space.Class3');  // assigned to global.Space.Class3
+    .from('Salutations') .in('Yo')   .as('.Space.Class3');  // assigned to local_scope.Space.Class3
 ```
