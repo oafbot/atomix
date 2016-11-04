@@ -106,25 +106,21 @@
         var i,
             ns,
             path,
+            libs,
             name;
 
         path = (context===global) ? "" : context.constructor.name;
+        libs = ["lib", "sys", "util", "stat"];
 
         for(i=0; i<namespaces.length; i++){
             if(namespaces[i]!==""){
                 if(typeof context[namespaces[i]] === 'undefined'){
-                    if(namespaces[i]==='lib'){
-                        context[namespaces[i]] = new lib();
-                    }
-                    else if(namespaces[i]==='static'){
-                        context[namespaces[i]] = new lib();
-                    }
-                    else if(namespaces[i]==='util'){
+                    if(libs.indexOf(namespaces[i])>=0 && (context instanceof lib)===false){
                         context[namespaces[i]] = new lib();
                     }
                     else{
                         name = Interface(namespaces[i]);
-                        ns = new name();
+                        ns   = new name();
                         context[namespaces[i]] = ns;
                     }
                 }
@@ -612,12 +608,14 @@
                     proto = proto.augment(parent, proto);
                 }
                 proto._meta_.mixin = parent;
-                return proto;
+                proto._meta_.type  = "singleton";
+                return this;
             }
 
             if(parent instanceof Singleton ||
                parent.prototype instanceof Singleton){
                 p = (parent instanceof Singleton) ? parent : parent.prototype;
+
                 c = p.decendant(this._meta_.name, this._meta_);
                 c = new c();
 
@@ -637,6 +635,7 @@
                 child.prototype.export(c.exports);
                 child.prototype._meta_.parent = this;
                 child.prototype._meta_.mixin  = parent.prototype;
+                child.prototype._meta_.type   = "singleton";
                 return new child();
             }
             else if(parent instanceof Quark){
@@ -665,7 +664,7 @@
                 parent = self.parent;
 
             if(this.instanceof(singleton)){
-                return atomix.prototype.singleton.call(self, self._meta_.name, mixin).constructor;
+                return atomix.prototype.singleton.call(self, self._meta_.name, self._meta_, mixin).constructor;
             }
 
             proto.constructor = function(...args){
@@ -713,11 +712,16 @@
             dest  = (typeof ns!=='undefined' && typeof ns.path!=='undefined') ? ns.path : dest;
 
             if(this.name != proto.name){
+                // if(proto._type_=='singleton'){
+
+                //     console.log(this.hasOwnProperty("_meta_"), this.name, proto.name, this._ns_)
+
+                //     return void 0;
+                // }
                 if(this._meta_.ns===undefined){
                     if(typeof ns==='string'){
                         namespaces = (ns.indexOf('.') > -1) ? ns.split(".") : [ns];
                         ns = nsref(global, namespaces);
-
                         _nmsp_ = null;
                     }
                     else if(_nmsp_!==_lib_ && _nmsp_!==null){
@@ -731,8 +735,9 @@
                         ns = _lib_;
                     }
                 }
-                else if(this._meta_.ns){
-                    ns = this._meta_.ns;
+                else if(this._meta_.ns && this._meta_.ns){
+                    if(this.hasOwnProperty("_meta_"))
+                        ns = this._meta_.ns;
                 }
                 else{
                     ns = _lib_;
@@ -740,16 +745,13 @@
                 }
             }
             else{
-                // if(ns===undefined && this._meta_.ns!==undefined){
-                //     ns = this._meta_.ns;
-                // }
-                // else if(ns!==undefined && this._meta_.ns===undefined){
-                //     this._meta_.ns = ns;
-                // }
-                // else{
-                    //ns = _lib_;
-                    //this._meta_.ns = _lib_;
-                //}
+                // if(this._type_=='singleton' || this instanceof Singleton)
+                //     if(this.hasOwnProperty("_meta_"))
+                //         ns = this._meta_.ns;
+                //     else{
+                //         // ns = proto._meta_.ns;
+                //         // console.log(this.hasOwnProperty("_meta_"), this.name, proto.name, ns.path)
+                //     }
             }
 
 
@@ -917,8 +919,8 @@
             }
         }
         else{
-            context = (this.nmsp===null) ? global : this.nmsp;
-            context = (namespaces.length>0 || this.nmsp!==null) ? context : _lib_;
+            context = (_nmsp_===null) ? global : _nmsp_;
+            context = (namespaces.length>0 || _nmsp_!==null) ? context : _lib_;
             ns      = nsref(context, namespaces);
             opts.ns = ns;
         }
@@ -969,7 +971,8 @@
             instance;
 
         p = atomix.prototype.process(name, args);
-        s = singleton.decendant(p.name, {ns:p.ns});
+
+        s = singleton.decendant(p.name, p.opts);
         s = new s();
         s._meta_        = new Metadata(p.opts, Object.getPrototypeOf(s));
         s._meta_.name   = p.name;
@@ -987,8 +990,8 @@
             return function(...args){
                 if(typeof instance!=='undefined')
                     return instance;
-                instance = this;
 
+                instance = this;
                 if(p.implementation){
                     implementation = p.implementation.bind(p.implementation, ...args);
                     imp = new implementation();
@@ -998,7 +1001,7 @@
                     return instance;
                 }
                 return instance;
-            };
+            }.bind(s);
         });
 
         fn = Interface(p.name);
@@ -1006,6 +1009,7 @@
         fn.prototype.constructor = Constructor(p.name, funx());
         fn.prototype.constructor.prototype = s;
         instance = new fn();
+
         instance.export(p.ns);
         return instance;
     };
@@ -1016,6 +1020,7 @@
      * @param  {string} name    Register the object under this name in the namespace.
      * @return {string}         The string representation of the namespace path.
      */
+    atomix.prototype.out =
     atomix.prototype.export = function(ns, name, fn){
         var dest,
             namespaces;
@@ -1047,13 +1052,16 @@
             }
         }
 
-        if(_exports_!==ns && _lib_!==ns && _stat_!==ns && _util_!==ns && _sys_!==ns){
+        if(ns instanceof lib || ns.constructor.name=="lib"){
+            ns[name] = fn;
+        }
+        else if(_exports_!==ns && _lib_!==ns && _stat_!==ns && _util_!==ns && _sys_!==ns){
             if(!ns.hasOwnProperty('lib'))
                 ns.lib = new lib();
 
             ns.lib[name] = fn;
 
-            dest = (dest==="" && ns!==global) ? ".." : dest;
+            dest = (dest==="" && ns!==global) ? "*" : dest;
             dest += '.lib';
         }
         else if(_stat_===ns || _util_===ns || _lib_===ns || _sys_===ns){
@@ -1066,11 +1074,10 @@
             throw "Exception: Constructor not exported.";
         }
 
-        if(dest.substring(0, 2)!=='..' && _spaces_.indexOf(dest)<0 && dest!==""){
+        if(dest.substring(0, 1)!=='*' && _spaces_.indexOf(dest)<0 && dest!==""){
             _spaces_.push(dest);
             _spaces_.sort();
         }
-
         return dest + '.' + name;
     };
 
@@ -1313,7 +1320,6 @@
         var prop = 'new';
         Object.defineProperty(this, prop, {
             get: function(){
-                this.nmsp = null;
                 _nmsp_    = null;
                 return this;
             },
@@ -1335,7 +1341,6 @@
 
         if(ns===null || typeof ns==='undefined' || ns===_lib_){
             _nmsp_ = null;
-            this.nmsp = null;
             return this;
         }
 
@@ -1354,10 +1359,9 @@
             revpath(ns.lib);
         }
 
-        this.nmsp = ns;
         _nmsp_ = ns;
 
-        return Atomix;
+        return this;
     };
 
     /**
@@ -1372,6 +1376,7 @@
             opts,
             funx,
             space,
+            except,
             nspath,
             instance,
             namespaces,
@@ -1389,6 +1394,7 @@
             namespaces = name.indexOf('.') > -1 ? name.split(".") : [name];
             name       = namespaces.pop();
             ns         = nsref(global, namespaces);
+            except     = ["lib", "sys", "util", "stat"];
 
             funx = function(){
                 var i,
@@ -1419,7 +1425,7 @@
                 return instance;
             };
 
-            fn = Interface(name);
+            fn = (except.indexOf(name)<0) ? Interface(name) : Constructor(name, lib);
             fn.prototype.class     = funx.bind(atomix.prototype.class);
             fn.prototype.singleton = funx.bind(atomix.prototype.singleton);
             fn.prototype.namespace = funx.bind(atomix.prototype.namespace);
@@ -1427,7 +1433,7 @@
             fn.prototype.path      = nspath;
             fn.prototype.type      = 'namespace';
 
-            space      = new fn();
+            space = new fn();
             space.path = nspath;
             space.node = ns;
 
@@ -1473,7 +1479,7 @@
 
         namespaces = name.split(".");
         name = namespaces.pop();
-        ns = nsget(namespaces.join('.'));
+        ns   = namespaces.length>0 ? nsget(namespaces.join('.')) : global;
         return [ns, name];
     };
 
@@ -1544,7 +1550,7 @@
         error = "Exception: New instances of static classes may not be constructed.";
 
         if(_class_===undefined || _class_===null || _class_===''){
-            if(this.nmsp===null)
+            if(_nmsp_===null)
                 atomix.prototype.ns('Atomix.exports.stat');
             c = atomix.prototype.class(name, {type:'static'}, ...args);
             _class_ = c.constructor;
@@ -1695,7 +1701,7 @@
          * @return {[type]}      [description]
          */
         this.from = function(path){
-            var pkg = this.pkg(path);
+            var pkg = this.package(path);
             return pkg;
         };
 
@@ -1777,6 +1783,7 @@
 
                 constructor.prototype._meta_.ns = ns[0];
             }
+
             return Atomix.new.export(ns[0], ns[1], constructor);
         };
 
@@ -1799,7 +1806,7 @@
          */
         this.mv = function(orig, dest){
             var fn = this.in(orig);
-            this.out(dest, fn);
+            this.out(dest, fn, true);
         };
 
         /**
@@ -1870,7 +1877,6 @@
                             case '2d':
                                 if(dirs.some(twodee)){
                                     index = dirs.findIndex(twodee);
-                                    console.log(index);
                                     dirs[index].push(prop);
                                 }
                                 else{
@@ -1921,6 +1927,16 @@
                     dirs = list(ns, name);
                 }
             }
+            else if(dir==='Atomix' || dir==='Atomix.*'){
+                let _dir_ = nsget('Atomix.exports');
+                for(i in _dir_){
+                    try{
+                        name = "Atomix." + i;
+                        ns   = nsget(name);
+                        dirs = list(ns, name);
+                    }catch(e){}
+                }
+            }
             else if(typeof dir=='string'){
                 ns   = nsget(dir);
                 dirs = list(ns, dir);
@@ -1949,7 +1965,7 @@
          * @param  {array} list    List of constructors in string representation.
          * @return {object}        New package with all the constructors.
          */
-        this.pkg = function(list, name, exclude){
+        this.package = function(list, name, exclude){
             var i,
                 c,
                 n,
@@ -2088,6 +2104,7 @@
     global.Singleton = Singleton;
     global.declare   = declare;
     global.ports     = port;
+    global.pkg       = port;
     global.quark     = quark;
     global.mx        = mx;
 
