@@ -9,13 +9,17 @@
         f,
         f1,
         f2,
+        f3,
+        f4,
         mix,
         exp,
         lib,
         util,
         nsref,
         nsget,
+        fcopy,
         extend,
+        errors,
         Atomix,
         Ports,
         Quark,
@@ -23,6 +27,7 @@
         Atomixer,
         Singleton,
         Metadata,
+        Abstract,
         Interface,
         Constructor,
         Factory,
@@ -50,19 +55,53 @@
     exp  = function Exports(){};
     lib  = function Library(){};
     util = function Utility(){};
+    e  = eval;
 
     extend = function(s){
-        this.prototype = new s();
+        var fn, p;
+        eval('fn = function '+s.name+'(){return s.call(this)};');
+        Object.defineProperty(this.prototype.constructor, 'name', {writable:true});
+
+        this.prototype = new fn();
+        this.prototype.constructor = fn;
+        //this.prototype.constructor.name = s.name;
+        //this.prototype.constructor.prototype = this.prototype;
         this.prototype.superclass = (function(){return s;})();
         this.superclass = this.prototype.superclass;
         return this;
     };
 
-    e  = eval;
-    f  = function(name, s){if(s==f1||s==f2){s=s.replace(/<name>/g, name);return e(s);}
+    fcopy = function(f1, f2){
+        if(f2===undefined)
+            f2 = function(){};
+        var temp = function temporary() { return f2.apply(f1, arguments); };
+        for(var k in f1) {
+            if(f1.hasOwnProperty(k))
+                temp[k] = f1[k];
+        }
+        return temp;
+    };
+
+    errors = {
+        abstract : "Exception: Abstract classes cannot be instantiated.",
+    };
+
+    f  = function(name, s){if(s==f1||s==f2||s==f3||s==f4){s=s.replace(/<name>/g, name);return e(s);}
          throw "Exception: Unknown constructor.";};
+
     f1 = "(function(){function <name>(){};<name>.extend="+extend.toString()+";return <name>;})";
-    f2 = "(function(call){function <name>(){return call(this, arguments);};<name>.extend="+extend.toString()+";return <name>;})";
+
+    f2 = "(function(call){function <name>(){return call(this, arguments);};<name>.extend="+extend.toString()+
+         ";return <name>;})";
+
+    f3 = "(function(){function <name>(){if(false===(this instanceof "+global.constructor.name+
+         "))throw '"+errors.abstract+"';return void 0;};<name>.extend="+extend.toString()+
+         ";<name>.type='abstract';Object.freeze(<name>);this.name=<name>;return <name>;})";
+
+    f4 = "(function(fn){function <name>(){if(false===(this instanceof "+global.constructor.name+
+         "))throw '"+errors.abstract+"'; return void 0;};<name>.extend="+extend.toString()+
+         ";<name>.extend(fn);<name>.type='abstract';Object.freeze(<name>);this.name=<name>;return <name>;})";
+
 
     _exports_ = new exp();
     _sys_     = new lib();
@@ -195,6 +234,15 @@
             throw "Exception: Anonymous function passed. Property assignements needs to be named.";
 
         return target;
+    };
+
+    /**
+     * Create a constructor that cannot be instantiated.
+     * @param {string} name
+     */
+    Abstract = function Abstarct(name, fn){
+        if(fn) Object.defineProperty(fn, 'name', {value:'Abstract', writable:true});
+        return (fn!==undefined) ? (f(name, f4))(fn) : f(name, f3)();
     };
 
     /**
@@ -344,8 +392,8 @@
          */
         this.init = function(){
             if(this instanceof this.constructor && this.constructor.type=='abstract')
-                throw "Exception: Abstract classes cannot be instantiated.";
-            this._meta_.type='abstract';
+                throw errors.abstract;
+            this._meta_.type = 'abstract';
             if(!this.gettype()) this.constructor.type='abstract';
         };
 
@@ -466,10 +514,14 @@
 
             if(proto instanceof Quark){
                 while(proto instanceof Quark){
-                    if(typeof proto._meta_.parent!=='undefined')
-                        parents.push(proto._meta_.parent);
+                    //if(proto.name != proto.parent.name){
                     if(typeof proto._meta_.mixin!=='undefined')
                         parents.push(proto._meta_.mixin);
+                    if(typeof proto._meta_.parent!=='undefined')
+                        parents.push(proto._meta_.parent);
+                    if(typeof proto._meta_.abstract!=='undefined')
+                        parents.push(proto._meta_.abstract);
+                    //}
                     proto = Object.getPrototypeOf(proto._meta_.parent);
                 }
                 parents.push(Object.prototype);
@@ -511,6 +563,7 @@
          * @param  {object} opts    Configuration options and metadata.
          * @return {function}       Constructor for the child object.
          */
+        this.derive =
         this.decendant = function(name, opts){
             var fn,
                 meta,
@@ -529,34 +582,32 @@
             meta = new Metadata(opts, proto);
 
             fn = Interface(name);
-            //fn.extend(this.constructor);
             fn.prototype = Object.create(this);
             fn.prototype.constructor = fn;
             fn.prototype.constructor.prototype = fn.prototype;
 
             fn.prototype._meta_ = meta;
-            fn.prototype.super  = function(...args){
+            fn.prototype.super  = function(code, args){
                 var p,
                     code,
                     proto;
 
-                parent = parent.bind(this);
-                p = new parent();
-                if(args.length && typeof args[args.length-1]==='function'){
-                    code = args.pop();
-                    code.call(this, ...args);
+                p = parent.prototype;
+
+                if(code && typeof code==='function'){
                     this.augment(code, this);
+                    code.apply(this, args);
                 }
+
                 proto = Object.getPrototypeOf(this);
                 proto._meta_.parent = p;
                 return this;
             };
+
             fn.prototype._meta_.parent = this;
             fn.prototype.export(this._meta_.ns);
-            child = new fn();
-            return child.constructor;
+            return fn.prototype.constructor;
         };
-        this.derive = this.decendant;
 
         /**
          * Child object inherits properies from the parent object via mixin.
@@ -564,16 +615,23 @@
          * @param  {object} child
          * @return {object} child
          */
+        this.extend =
+        this.approp =
         this.augment = function(parent, child){
-            var proto = Object.getPrototypeOf(child);
-            for(let i in parent){
+            var i,
+                proto;
+            child = (child===undefined) ? this : child;
+            proto = Object.getPrototypeOf(child);
+
+            for(i in parent){
                 if(!child.hasOwnProperty(i) && typeof child[i]=='undefined')
                     if(i!=='_meta_')
                        proto[i] = parent[i];
                 if(i=='init' && !proto.hasOwnProperty(i))
                     proto[i] = parent[i];
             }
-            if(typeof parent!=='function')
+
+            if(typeof parent!=='function' && parent._meta_ && parent._meta_.abstract===undefined)
                 child._meta_.mixin = parent;
 
             if(child instanceof atomix && !(proto instanceof atomix)){/*pass*/}else{
@@ -581,23 +639,53 @@
             }
             return child;
         };
-        //this.extend = this.augment;
 
         /**
          * Define object's inheritance.
          * @param  {object} parent    Parent object that this will inherit from.
          * @return {object}           The redefined context for this object.
          */
+        this.extends =
         this.inherits = function(parent){
             var c,
                 f,
                 p,
+                f0,
+                f1,
+                fn,
+                abs,
+                impl,
                 child,
                 mixed,
                 proto,
+                abstract,
                 instance;
 
-            if(this instanceof Singleton){
+            if(typeof parent=='function' && parent.type=='abstract'){
+                f0 = function(){if(false===(this instanceof global.constructor))throw errors.abstract;return void 0;};
+                abs = function Abstract(){return f0();};
+
+                abstract = parent;
+                proto = new parent.prototype.constructor();
+                //proto.superclass = abs;
+                f1   = Constructor('Implementation', abstract.prototype.superclass);
+                impl = new f1();
+                proto.superclass = impl.constructor;
+                fn = Constructor(parent.name, (function(){return proto;}));
+                fn.prototype = proto;
+                fn.prototype.constructor = fn;
+
+                parent = new fn();
+                parent = Object.create(parent);
+                child  = this.augment(parent);
+
+                child._meta_.parent   = parent;
+                child._meta_.abstract = abstract.prototype;
+                abstract.prototype.constructor = abs;
+                return child;
+            }
+
+            else if(this instanceof Singleton){
                 proto = Object.getPrototypeOf(this);
 
                 if(typeof parent==='object'){
@@ -612,7 +700,7 @@
                 return this;
             }
 
-            if(parent instanceof Singleton ||
+            else if(parent instanceof Singleton ||
                parent.prototype instanceof Singleton){
                 p = (parent instanceof Singleton) ? parent : parent.prototype;
 
@@ -651,17 +739,21 @@
             }
             return this.augment(parent, this);
         };
-        this.extends = this.inherits;
 
         /**
          * The implementation for a new object 'class'.
          * @param  {function} mixin    A function that adds functionality and defines the object.
          * @return {function}          The constructor to create the redefined object.
          */
+        this.employs =
         this.implements = function(mixin){
             var self   = this,
                 proto  = Object.getPrototypeOf(self),
                 parent = self.parent;
+
+            if(mixin.type && mixin.type=='abstract'){
+                return  this.inherits(mixin);
+            }
 
             if(this.instanceof(singleton)){
                 return atomix.prototype.singleton.call(self, self._meta_.name, self._meta_, mixin).constructor;
@@ -669,27 +761,31 @@
 
             proto.constructor = function(...args){
                 var f,
+                    m,
                     fn;
 
-                f = function(...args){self.super(mixin.bind(self, ...args));};
-                fn = Constructor(self._meta_.name, f.bind(self,...args));
+                f = function(...a){
+                    if(self.init!==undefined)
+                        self.init.call(self, ...a);
+                    self.super(mixin, a);
+                };
+
+                fn = Constructor(self._meta_.name, f);
                 fn.prototype = self;
                 fn.prototype.constructor = fn;
                 fn.prototype.constructor.prototype = self;
+                fn = fn.bind(...args);
                 self = new fn();
-
-                if(self.init!==undefined)
-                    self.init.call(self, ...args);
 
                 return self;
             };
+
             proto.constructor = Constructor(this._meta_.name, proto.constructor);
             proto.constructor.prototype = proto;
             proto.export(self._meta_.ns);
 
             return self.constructor;
         };
-        this.employs = this.implements;
 
         /**
          * Export the object to a namespace.
@@ -712,12 +808,6 @@
             dest  = (typeof ns!=='undefined' && typeof ns.path!=='undefined') ? ns.path : dest;
 
             if(this.name != proto.name){
-                // if(proto._type_=='singleton'){
-
-                //     console.log(this.hasOwnProperty("_meta_"), this.name, proto.name, this._ns_)
-
-                //     return void 0;
-                // }
                 if(this._meta_.ns===undefined){
                     if(typeof ns==='string'){
                         namespaces = (ns.indexOf('.') > -1) ? ns.split(".") : [ns];
@@ -744,16 +834,6 @@
                     this._meta_.ns = _lib_;
                 }
             }
-            else{
-                // if(this._type_=='singleton' || this instanceof Singleton)
-                //     if(this.hasOwnProperty("_meta_"))
-                //         ns = this._meta_.ns;
-                //     else{
-                //         // ns = proto._meta_.ns;
-                //         // console.log(this.hasOwnProperty("_meta_"), this.name, proto.name, ns.path)
-                //     }
-            }
-
 
             ns = (ns.hasOwnProperty('lib')) ? ns.lib : ns;
             ns[name] = this.constructor;
@@ -1457,6 +1537,7 @@
      * @param  {string} name    String representation of namespace.
      * @return {object}         Namespaced object.
      */
+    atomix.prototype.parse =
     atomix.prototype.unpack = function(name){
         var ns,
             namespaces;
@@ -1466,7 +1547,6 @@
         ns = nsget(namespaces.join('.'));
         return ns[name];
     };
-    atomix.prototype.parse = atomix.prototype.unpack;
 
     /**
      * Method to convert string representation of a namespaced path to an namespace and classname.
@@ -1635,6 +1715,10 @@
     atomix.prototype.exports.lib.node  = atomix.prototype.exports;
     atomix.prototype.exports.stat.node = atomix.prototype.exports;
     atomix.prototype.exports.util.node = atomix.prototype.exports;
+    atomix.prototype.factory           = new lib();
+    atomix.prototype.factory.interface = Interface;
+    atomix.prototype.factory.construct = Constructor;
+    atomix.prototype.factory.abstract  = Abstract;
     atomix.prototype.new               = atomix.prototype.reset.call(atomix.prototype);
 
     /* Global instance of Atomix */
@@ -2145,7 +2229,6 @@
     //global.Atomix.prototype = global.Atomix;
 
     Object.defineProperty(global, 'Atomix', {configurable: false});
-
 
     /* Freeze global instance of Atomix Object. */
     // Object.freeze(proton);
