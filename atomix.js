@@ -957,13 +957,11 @@
                 proto  = Object.getPrototypeOf(self),
                 parent = self.parent;
 
-            if(mixin.type && mixin.type=='abstract'){
+            if(mixin.type && mixin.type=='abstract')
                 return proto.inherits(mixin);
-            }
 
-            if(this.instanceof(singleton)){
+            if(this.instanceof(singleton))
                 return atomix.prototype.singleton.call(self, self._meta_.name, self._meta_, mixin).constructor;
-            }
 
             proto.constructor = function(...args){
                 var f,
@@ -1872,8 +1870,8 @@
                     //fn.prototype.constructor.prototype = fn.prototype;
                     fn.bind(fn, ...args);
 
-                    n = Object.create(fn.prototype) //new fn();
-                    n.constructor = function(){throw error;};
+                    n = new fn();
+                    n.constructor = Constructor(name, function(){throw error;});
                     n.init = i.init;
 
                     f = function(...a){
