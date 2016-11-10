@@ -19,6 +19,7 @@
         nsget,
         fcopy,
         extend,
+        isnew,
         errors,
         Atomix,
         Ports,
@@ -30,6 +31,9 @@
         Abstract,
         Interface,
         Constructor,
+        AtomixError,
+        Exceptions,
+        ErrorClass,
         Factory,
         ClassFactory,
         PackageManager,
@@ -50,12 +54,35 @@
         _util_,
         _stat_,
         _spaces_,
-        _exports_;
+        _exports_,
+        _errors_,
+        EndOfFile,
+        eof;
 
     exp  = function Exports(){};
     lib  = function Library(){};
     util = function Utility(){};
     e  = eval;
+
+    EndOfFile = function EndOfFile(){this.instance=null;};
+    EndOfFile.prototype = Object.create(null);
+    eof = new EndOfFile();
+    Object.freeze(eof);
+    Object.freeze(EndOfFile.prototype);
+    // global = new Proxy(global, {
+    //     get : function(t, k, r) { if(k=='eof') return eof.instance; return t[k]; },
+    // });
+    Object.defineProperty(global, 'eof', {
+        get : function(){return eof.instance;},
+        set : function(v){throw Error("End of file object cannot be redefined.");}
+    });
+
+
+    isnew = function(o, c){
+        if(c===undefined)
+            return (false===(o instanceof global.constructor)) ? true : false;
+        return (false===(o instanceof c)) ? false : true;
+    };
 
     extend = function(s){
         var fn, p;
@@ -64,8 +91,6 @@
 
         this.prototype = new fn();
         this.prototype.constructor = fn;
-        //this.prototype.constructor.name = s.name;
-        //this.prototype.constructor.prototype = this.prototype;
         this.prototype.superclass = (function(){return s;})();
         this.superclass = this.prototype.superclass;
         return this;
@@ -82,12 +107,186 @@
         return temp;
     };
 
-    errors = {
-        abstract : "Exception: Abstract classes cannot be instantiated.",
+    AtomixError = function AtomixError(n, message, name) {
+        var last,
+            gen,
+            pops,
+            proto,
+            self,
+            stax,
+            stack,
+            trace;
+
+        self  = this;
+        stack = new Error().stack;
+        trace = stack.split("\n").map(function(e){return e.trim();});
+        last  = stack.match(/[^\s]+$/);
+
+        pops  = function*(){
+            var n = 0;
+
+            while(n<trace.length){
+                var next, log;
+
+                if(typeof next=='number')
+                    n = next;
+
+                log  = trace[n].match(/[^\s]+$/);
+                next = yield log;
+                n    = (next && next.done) ? 0 : n + 1;
+            }
+        };
+        stax = pops();
+
+        this.list = [
+            "AbstarctInvocationError",
+            "InterfaceReferenceError",
+            "NamespaceReferenceError",
+            "ExportError",
+            "ImportError",
+            "ParameterError",
+            "StaticInvocationError"
+        ];
+
+        this.code    = n;
+        this.name    = name || "AtomixError";
+        this.type    = message.split(":").shift();
+        this.message = message;
+        this.stack   = stack;
+        this.trace   = trace;
+
+        this.trace.next = function(n){
+            var next,
+                value;
+
+            next  = (n!==undefined) ? stax.next(n) : stax.next();
+            value = (next.done) ? void 0 : next.value;
+
+            if(value===undefined)
+                stax = pops();
+            if(n!==undefined)
+                value = stax.next().value;
+
+            return value;
+        };
+
+        this.trace.dump = function(){
+            var orig,
+                name,
+                next,
+                msg,
+                traces;
+
+            orig   = self.stack;
+            next   = self.trace.next();
+            traces = [];
+
+            console.groupCollapsed("Error[" + self.code + "]: " + self.name);
+                while(next!==undefined){
+                    console.log(next);
+                    if(next[0]==="Error"){
+                        name = next.input.match(/[^(at)\s]+[a-zA-z0-9.<>]+[^\s\(]/);
+                        msg  = next.pop();
+
+                        self.stack = `${name} at ${msg}`;
+                        console.warn(self.stack);
+                        next = self.trace.next();
+                    }
+                }
+            console.groupEnd();
+
+            self.stack = orig;
+            stax = pops();
+            return [self.code, self.name, self.type];
+        };
+
+        this.trace.last = `${this.name} at ${last}`;
+
+        this.pipe  = function(name){ return thismessage.replace(/<name>/g, name); };
+        this.alter = function(typ){
+            var f;
+            proto = Object.getPrototypeOf(this);
+
+            switch(typ){
+                case 'TypeError':
+                    ErrorClass = TypeError;
+                    break;
+                case 'ReferenceError':
+                    ErrorClass = ReferenceError;
+                    break;
+                default:
+                    ErrorClass = Error;
+                    break;
+            }
+
+            proto             = Object.create(AtomixError.prototype);
+            proto.name        = this.list[this.code];
+            proto.message     = message;
+            proto.constructor = Constructor.call(this, proto.name, AtomixError);
+            proto.constructor.prototype = Object.create(ErrorClass.prototype);
+            Object.setPrototypeOf(this, proto);
+            return new this.constructor(n, message, proto.name);
+        };
+
+        if(isnew(this, AtomixError)){
+            self = this.alter(this.type);
+            //console.error(self.toString());
+            _errors_.push(self);
+        }
+        return self;
     };
 
+    AtomixError.prototype = Object.create(Error.prototype);
+    AtomixError.prototype.name = "AtomixError";
+    AtomixError.prototype.message = "";
+    AtomixError.prototype.constructor = AtomixError;
+
+    Exceptions = function Exceptions(){
+        var i, f, msgs, list;
+
+        f = function(n, s){ var e = new AtomixError(n, msgs[n]); if(s) return e.pipe(s); return e.message; };
+
+        list = ["abstarct", "unknown constructor", "namespace", "export", "import", "parameter", "static"];
+
+        msgs = {
+            0 : "TypeError: Abstract classes cannot be instantiated.",
+            1 : "ReferenceError: Unknown interface invoked",
+            2 : "ReferenceError: Namespace '<name>' does not exist.",
+            3 : "ReferenceError: Errors were encountered in export. Constructor '<name>' was not exported.",
+            4 : "ReferenceError: Object or function '<name>' not found.",
+            5 : "TypeError: Parameter error.",
+            6 : "TypeError: New instances of static classes may not be constructed.",
+            7 : "TypeError: Invalid parameter. Constructor missing from arguments.",
+        };
+
+        this.num   = function(n, str){return f(n, str);};
+        this.raise = function(id, str){
+            var e;
+            if(typeof id==='number')
+                e = this.num(id, str);
+            else if(typeof id=='string' && this.hasOwnProperty(id))
+                e = function(str){ return f(msgs.indexOf(id), str); };
+            else
+                throw f(5);
+            throw e;
+        };
+        this.throw = this.raise;
+
+        this.abstract  = function( ){ return f(0   ); };
+        this.unknown   = function( ){ return f(1   ); };
+        this.namespace = function(s){ return f(2, s); };
+        this.export    = function(s){ return f(3, s); };
+        this.import    = function(s){ return f(4, s); };
+        this.parameter = function( ){ return f(5   ); };
+        this.static    = function( ){ return f(6   ); };
+        this.missing   = function( ){ return f(7   ); };
+    };
+
+    errors = new Exceptions();
+    global.errors = errors;
+
     f  = function(name, s){if(s==f1||s==f2||s==f3||s==f4){s=s.replace(/<name>/g, name);return e(s);}
-         throw "Exception: Unknown constructor.";};
+         throw errors.num(1);};
 
     f1 = "(function(){function <name>(){};<name>.extend="+extend.toString()+";return <name>;})";
 
@@ -95,11 +294,11 @@
          ";return <name>;})";
 
     f3 = "(function(){function <name>(){if(false===(this instanceof "+global.constructor.name+
-         "))throw '"+errors.abstract+"';return void 0;};<name>.extend="+extend.toString()+
+         "))throw '"+errors.abstract.toString()+"()';return void 0;};<name>.extend="+extend.toString()+
          ";<name>.type='abstract';Object.freeze(<name>);this.name=<name>;return <name>;})";
 
     f4 = "(function(fn){function <name>(){if(false===(this instanceof "+global.constructor.name+
-         "))throw '"+errors.abstract+"'; return void 0;};<name>.extend="+extend.toString()+
+         "))throw '"+errors.abstract.toString()+"()'; return void 0;};<name>.extend="+extend.toString()+
          ";<name>.extend(fn);<name>.type='abstract';Object.freeze(<name>);this.name=<name>;return <name>;})";
 
 
@@ -110,6 +309,7 @@
     _stat_    = new lib();
     _nmsp_    = null;
     _spaces_  = [];
+    _errors_  = [];
 
     /**
      * Recursevely register the lookup paths for the namespace up to the global scope.
@@ -185,12 +385,12 @@
         for(i=0; i<namespaces.length; i++){
             if(namespaces[i]!==""){
                 if(typeof context[namespaces[i]] === 'undefined')
-                   throw "Exception: Namespace '" + nsstring + "' does not exist.";
+                   throw errors.namespace.pipe(nsstring);
                 context = context[namespaces[i]];
             }
         }
         if(context===global)
-            throw "Exception: Namespace '" + nsstring + "' does not exist.";
+            throw error.namespace.pipe(nsstring);
         return context;
     };
 
@@ -231,7 +431,7 @@
         else if(targeted.hasOwnProperty(name))
             return target;
         else
-            throw "Exception: Anonymous function passed. Property assignements needs to be named.";
+            throw "Exception: Invalid parameter. Name parameter missing and the function passed was anonymous. Property assignements must be named. Either explicitly pass a property name value or name the function.";
 
         return target;
     };
@@ -309,12 +509,12 @@
          * @return {mixed}
          */
         this.getprop = (function(prop, getter){
-            Object.defineProperty(this, prop, {
+            Object.defineProperty(Quark.prototype, prop, {
                 get: getter,
                 set: function(){prop = this.getprop.call(this);},
                 configurable: true
             });
-        }).bind(this);
+        }).bind(Quark.prototype);
 
         /**
          * Sort the constructor arguments by type.
@@ -392,7 +592,7 @@
          */
         this.init = function(){
             if(this instanceof this.constructor && this.constructor.type=='abstract')
-                throw errors.abstract;
+                throw errors.abstract();
             this._meta_.type = 'abstract';
             if(!this.gettype()) this.constructor.type='abstract';
         };
@@ -486,6 +686,7 @@
                 o,
                 proto,
                 rents,
+                parent,
                 parents,
                 getlist;
 
@@ -512,21 +713,25 @@
                 return list;
             });
 
+            parent = (this._meta_.parent!==undefined) ? this._meta_.parent : null;
+            //proto = parent;
+
             if(proto instanceof Quark){
                 while(proto instanceof Quark){
-                    //if(proto.name != proto.parent.name){
                     if(typeof proto._meta_.mixin!=='undefined')
                         parents.push(proto._meta_.mixin);
                     if(typeof proto._meta_.parent!=='undefined')
                         parents.push(proto._meta_.parent);
                     if(typeof proto._meta_.abstract!=='undefined')
                         parents.push(proto._meta_.abstract);
-                    //}
-                    proto = Object.getPrototypeOf(proto._meta_.parent);
+
+                    proto  = proto._meta_.parent;
+                    parent = (parent!==proto && proto._meta_.parent) ? proto._meta_.parent : null;
                 }
-                parents.push(Object.prototype);
+                //parents.push(Object.prototype);
                 return parents;
             }
+            return void 0;
         });
 
         /**
@@ -568,45 +773,45 @@
             var fn,
                 meta,
                 child,
+                self,
                 proto,
+                struct,
                 parent;
 
-            proto  = Object.getPrototypeOf(this);
-            parent = proto.constructor;
+            parent = this;
 
-            opts = (typeof opts!=='undefined') ? opts : {};
+            opts      = (typeof opts!=='undefined') ? opts : {};
             opts.name = name;
             opts.info = (typeof opts.info==='undefined') ? name + " Object" : opts.info;
-            opts.type = (typeof opts.type==='undefined') ? "class"   : opts.type;
-            opts.ns   = (typeof opts.ns  ==='undefined') ? undefined : opts.ns;
-            meta = new Metadata(opts, proto);
+            opts.type = (typeof opts.type==='undefined') ? "class"          : opts.type;
+            opts.ns   = (typeof opts.ns  ==='undefined') ? undefined        : opts.ns;
 
             fn = Interface(name);
-            fn.prototype = Object.create(this);
+            fn.prototype = Object.create(parent);
             fn.prototype.constructor = fn;
-            fn.prototype.constructor.prototype = fn.prototype;
 
-            fn.prototype._meta_ = meta;
-            fn.prototype.super  = function(code, args){
-                var p,
-                    code,
-                    proto;
+            self = fn.prototype;
+            meta = new Metadata(opts, self);
 
-                p = parent.prototype;
+            fn.prototype.super = function(code, args){
+                var proto;
+
+                proto = Object.getPrototypeOf(this);
 
                 if(code && typeof code==='function'){
-                    this.augment(code, this);
+                    this.augment(code);
                     code.apply(this, args);
                 }
 
-                proto = Object.getPrototypeOf(this);
-                proto._meta_.parent = p;
+                this._meta_.parent = parent;
                 return this;
             };
 
-            fn.prototype._meta_.parent = this;
-            fn.prototype.export(this._meta_.ns);
-            return fn.prototype.constructor;
+            fn.prototype._meta_ = meta;
+            fn.prototype._meta_.parent = parent;
+            fn.prototype.export(meta.ns);
+
+            return fn;
         };
 
         /**
@@ -626,7 +831,7 @@
             for(i in parent){
                 if(!child.hasOwnProperty(i) && typeof child[i]=='undefined')
                     if(i!=='_meta_')
-                       proto[i] = parent[i];
+                        proto[i] = parent[i];
                 if(i=='init' && !proto.hasOwnProperty(i))
                     proto[i] = parent[i];
             }
@@ -662,7 +867,8 @@
                 instance;
 
             if(typeof parent=='function' && parent.type=='abstract'){
-                f0 = function(){if(false===(this instanceof global.constructor))throw errors.abstract;return void 0;};
+                f0  = function(){if(false===(this instanceof global.constructor))
+                      throw errors.abstract();return void 0;};
                 abs = function Abstract(){return f0();};
 
                 abstract = parent;
@@ -719,7 +925,7 @@
                 child = Interface(this._meta_.name);
                 child.prototype = c;
                 child.prototype.constructor = Constructor(c._meta_.name, f());
-                child.prototype.constructor.prototype = c;
+                //child.prototype.constructor.prototype = c;
                 child.prototype.export(c.exports);
                 child.prototype._meta_.parent = this;
                 child.prototype._meta_.mixin  = parent.prototype;
@@ -729,13 +935,13 @@
             else if(parent instanceof Quark){
                 child = parent.decendant(this._meta_.name, this._meta_);
                 child.prototype._meta_.parent = parent;
-                return new child();
+                return Object.create(child.prototype);
             }
             else if(parent.prototype instanceof Quark){
                 parent = new parent();
                 child  = parent.decendant(this._meta_.name, this._meta_);
                 child.prototype._meta_.parent = parent;
-                return new child();
+                return Object.create(child.prototype);
             }
             return this.augment(parent, this);
         };
@@ -752,7 +958,7 @@
                 parent = self.parent;
 
             if(mixin.type && mixin.type=='abstract'){
-                return  this.inherits(mixin);
+                return proto.inherits(mixin);
             }
 
             if(this.instanceof(singleton)){
@@ -765,24 +971,26 @@
                     fn;
 
                 f = function(...a){
-                    if(self.init!==undefined)
-                        self.init.call(self, ...a);
-                    self.super(mixin, a);
+                    self = self.super(mixin, a);
+                    if(this.init!==undefined)
+                        this.init.call(self, ...a);
+                    return this;
                 };
 
                 fn = Constructor(self._meta_.name, f);
                 fn.prototype = self;
                 fn.prototype.constructor = fn;
-                fn.prototype.constructor.prototype = self;
-                fn = fn.bind(...args);
-                self = new fn();
+                fn.prototype.constructor.prototype = fn.prototype;
+                fn = fn.bind(self, ...args);
 
-                return self;
+                proto = new fn();
+                fn.prototype = proto;
+                return proto;
             };
 
-            proto.constructor = Constructor(this._meta_.name, proto.constructor);
-            proto.constructor.prototype = proto;
-            proto.export(self._meta_.ns);
+            proto.constructor = Constructor(proto._meta_.name, proto.constructor);
+            self.constructor.prototype = proto;
+            self.export(self._meta_.ns);
 
             return self.constructor;
         };
@@ -896,7 +1104,7 @@
 
     Quark.extend = extend;
     quark = new Quark('Quark', {info:'Quark Object'});
-    Quark.prototype = quark;
+    //Quark.prototype = quark;
 
     /**
      * Proton. Base Object for Atomix inheritance.
@@ -904,7 +1112,7 @@
      */
     Proton = quark.decendant('Proton', {info:'Proton Object', ns:_sys_, type:'base'});
     proton = new Proton();
-    Proton.prototype = proton;
+    //Proton.prototype = proton;
 
     /**
      * Creates a base singleton object all singletons may inherit from.
@@ -928,7 +1136,7 @@
             fn = Interface('Singleton');
             fn.prototype = instance;
             fn.prototype.constructor = fn;
-            fn.prototype.constructor.prototype = instance;
+            //fn.prototype.constructor.prototype = instance;
             instance = new fn();
         };
 
@@ -937,7 +1145,7 @@
         singleton = new Singleton();
         Singleton.prototype = singleton;
         Singleton.prototype.constructor = Singleton;
-        Singleton.prototype.constructor.prototype = singleton;
+        //Singleton.prototype.constructor.prototype = singleton;
         return singleton;
     })();
 
@@ -946,12 +1154,13 @@
      * @type {Proton}
      */
     atomix = proton.decendant('Atomix', {info:'Atomix Object', ns:_sys_, type:'utility'});
-    mix    = new atomix();
-    atomix = mix.implements(function(s){
-        atomix.prototype.init = function(s){
-            atomix.prototype.scope = (s===undefined) ? global : s;
+    atomix.prototype = new atomix();
+    atomix.prototype.implements(function(s){
+        this.init = function(s){
+            this.scope = (s===undefined) ? global : s;
             this._meta_.type = 'utility';
         };
+        //this.init(s);
     });
 
     /**
@@ -1087,7 +1296,7 @@
         fn = Interface(p.name);
         fn.prototype = s;
         fn.prototype.constructor = Constructor(p.name, funx());
-        fn.prototype.constructor.prototype = s;
+        //fn.prototype.constructor.prototype = s;
         instance = new fn();
 
         instance.export(p.ns);
@@ -1151,7 +1360,7 @@
             ns.lib[name] = fn;
         }
         else{
-            throw "Exception: Constructor not exported.";
+            throw errors.export(name);
         }
 
         if(dest.substring(0, 1)!=='*' && _spaces_.indexOf(dest)<0 && dest!==""){
@@ -1302,7 +1511,7 @@
                     return c;
                 }
             }
-            throw "Exception: Object '" + name + "' not found.";
+            throw errors.import.pipe(name);
         }
     };
 
@@ -1400,7 +1609,9 @@
         var prop = 'new';
         Object.defineProperty(this, prop, {
             get: function(){
-                _nmsp_    = null;
+                _nmsp_     = null;
+                this.nmsp  = null;
+                //this.scope = Object.getPrototypeOf(this).scope;
                 return this;
             },
             set: function(){
@@ -1627,7 +1838,7 @@
             error;
 
         atmx  = atomix.prototype;
-        error = "Exception: New instances of static classes may not be constructed.";
+        error = errors.static;
 
         if(_class_===undefined || _class_===null || _class_===''){
             if(_nmsp_===null)
@@ -1648,24 +1859,23 @@
                     f = _class_;
                     f = f.bind.apply(f, [f].concat(args));
                     i = new f();
-                    i = Object.create(i);
-                    f = i.decendant(i.name);
-                    f = f.bind(f, ...args);
-                    i = new f();
+                    // i = Object.create(i);
+                    // f = i.decendant(i.name);
+                    // f = f.bind(f, ...args);
+                    // i = new f();
 
                     name = name || i.constructor.name;
 
                     fn = Constructor(name, i.constructor);
                     fn.prototype = i;
                     fn.prototype.constructor = fn;
-                    fn.prototype.constructor.prototype = fn.prototype;
+                    //fn.prototype.constructor.prototype = fn.prototype;
                     fn.bind(fn, ...args);
 
-                    n = new fn();
-                    n.constructor = function(){
-                       throw error;
-                    };
+                    n = Object.create(fn.prototype) //new fn();
+                    n.constructor = function(){throw error;};
                     n.init = i.init;
+
                     f = function(...a){
                         if((this!==undefined && this.constructor===f) || (this===f && this.constructor===f))
                             throw error;
@@ -1676,7 +1886,7 @@
                         return (a) ? atmx.static.call(n, name, fn, ...a) : atmx.static.call(n, name, fn, ...args);
                     };
 
-                    Atomix.export("Atomix.exports.stat", name, f);
+                    atomix.prototype.export("Atomix.exports.stat", name, f);
                     return f;
                 }
             }
@@ -1700,6 +1910,7 @@
     atomix.prototype.blimp = atomix.prototype.autobuild;
 
     atomix.prototype.nmsp              = _nmsp_;
+    atomix.prototype.errors            = _errors_;
     atomix.prototype.exports           = _exports_;
     atomix.prototype.namespaces        = _spaces_;
     atomix.prototype.exports.sys       = _sys_;
@@ -1715,14 +1926,20 @@
     atomix.prototype.exports.lib.node  = atomix.prototype.exports;
     atomix.prototype.exports.stat.node = atomix.prototype.exports;
     atomix.prototype.exports.util.node = atomix.prototype.exports;
+    atomix.prototype.sys               = atomix.prototype.exports.sys;
+    atomix.prototype.lib               = atomix.prototype.exports.lib;
+    atomix.prototype.util              = atomix.prototype.exports.util;
+    atomix.prototype.stat              = atomix.prototype.exports.stat;
+    //atomix.prototype.new               = atomix.prototype.reset.call(Atomix);
     atomix.prototype.factory           = new lib();
     atomix.prototype.factory.interface = Interface;
     atomix.prototype.factory.construct = Constructor;
     atomix.prototype.factory.abstract  = Abstract;
-    atomix.prototype.new               = atomix.prototype.reset.call(atomix.prototype);
+    //atomix.prototype.new               = atomix.prototype.reset.call(atomix.prototype);
 
     /* Global instance of Atomix */
-    Atomix            = new atomix();
+    Atomix = new atomix();
+
     Atomix.nmsp       = _nmsp_;
     Atomix.namespaces = _spaces_;
     Atomix.sys        = Atomix.exports.sys;
@@ -1730,10 +1947,16 @@
     Atomix.util       = Atomix.exports.util;
     Atomix.stat       = Atomix.exports.stat;
     Atomix.new        = Atomix.reset.call(Atomix);
-    mx                = Atomix;
 
+    //delete Object.getPrototypeOf(Atomix).constructor;
+    atomix = Atomix.constructor;
     atomix.prototype = Atomix;
-    atomix.prototype.constructor = atomix;
+    mx = Atomix;
+    //atomix.prototype.constructor = atomix;
+    // atomix.prototype.constructor.prototype = Atomix;
+    // atomix.prototype.constructor.prototype.constructor = atomix;
+    // atomix.prototype.constructor.prototype.constructor.prototype = Atomix;
+    //Object.setPrototypeOf(Atomix, atomix.prototype.constructor.prototype.constructor.prototype);
 
     Factory =
     Atomix.class('Factory', {type:'utility', ns:_util_})
@@ -1794,7 +2017,8 @@
          * @param  {string} path
          * @return {function}
          */
-        this.in = function(path){
+        this.in =
+        this.import = function(path){
             var i, nspath, sub, tried;
             sub   = ["lib", "sys", "util", "stat"];
             tried = [path];
@@ -1822,7 +2046,8 @@
          * @param  {...mixed} args     String: export path, function: constructor, boolean: delete other referances.
          * @return {string}            Namespace path to object.
          */
-        this.out = function(...args){
+        this.out =
+        this.export = function(...args){
             var i,
                 ns,
                 del,
@@ -1841,7 +2066,7 @@
             }
 
             if(constructor===undefined || constructor===null)
-                throw "Exception: Invalid parameter. Missing constructor.";
+                throw error.missing();
             if(typeof constructor!='function')
                 throw "Exception: Invalid type. Constructors have to be functions.";
 
@@ -2180,9 +2405,7 @@
     PackageManager.bind(Atomix);
     port = new PackageManager();
 
-    // global.Interface = Interface;
-    // global.boundIF   = Constructor;
-    // global.Quark     = Quark;
+    global.Quark     = Quark;
     global.Proton    = Proton;
     global.singleton = singleton;
     global.Singleton = Singleton;
@@ -2192,24 +2415,24 @@
     global.quark     = quark;
     global.mx        = mx;
 
-    Atomixer = atomix.bind(Atomix);
-    Object.defineProperty(Atomixer, 'name', {value:Atomix.name, writable:true});
-
     global.Atomix = (function(){
         var i, self;
         self = this;
 
+        Atomixer = atomix.bind(self);
+        Object.defineProperty(Atomixer, 'name', {value:self.name, writable:true});
+
         for(i in self)
-            Atomixer[i] = Atomix[i];
+            Atomixer[i] = self[i];
 
         for(i in self._meta_)
-            Atomixer["_" + i + "_"] = Atomix.meta(i);
+            Atomixer["_" + i + "_"] = self.meta(i);
 
-        Atomixer.new       = Atomix.new;
-        Atomixer.ancestors = Atomix.ancestors;
-        Atomixer.name      = Atomix.name;
-        Atomixer.parent    = Atomix.parent;
-        Atomixer.proton    = Atomix.proton;
+        Atomixer.new       = self.new;
+        Atomixer.ancestors = self.ancestors;
+        Atomixer.name      = self.name;
+        Atomixer.parent    = self.parent;
+        Atomixer.proton    = self.proton;
 
         Atomixer.namespaces = _spaces_;
         Atomixer.sys        = _sys_;
@@ -2219,15 +2442,7 @@
 
         return Atomixer;
     }).call(Atomix);
-
-    // global.Atomix = new Proxy(global.Atomix, {
-    //     construct: function(target, args){
-    //       throw "Exception: New instances of static classes may not be constructed.";
-    //     }
-    //     get:
-    // });
-    //global.Atomix.prototype = global.Atomix;
-
+    console.log(global.Atomix)
     Object.defineProperty(global, 'Atomix', {configurable: false});
 
     /* Freeze global instance of Atomix Object. */
@@ -2237,3 +2452,4 @@
     // Object.seal(global.Atomix._meta_);
     // Object.preventExtensions(global.Atomix);
 })(this);
+//const EOF = eof;
