@@ -64,20 +64,6 @@
     util = function Utility(){};
     e  = eval;
 
-    EndOfFile = function EndOfFile(){this.instance=null;};
-    EndOfFile.prototype = Object.create(null);
-    eof = new EndOfFile();
-    Object.freeze(eof);
-    Object.freeze(EndOfFile.prototype);
-    // global = new Proxy(global, {
-    //     get : function(t, k, r) { if(k=='eof') return eof.instance; return t[k]; },
-    // });
-    Object.defineProperty(global, 'eof', {
-        get : function(){return eof.instance;},
-        set : function(v){throw Error("End of file object cannot be redefined.");}
-    });
-
-
     isnew = function(o, c){
         if(c===undefined)
             return (false===(o instanceof global.constructor)) ? true : false;
@@ -230,7 +216,6 @@
 
         if(isnew(this, AtomixError)){
             self = this.alter(this.type);
-            //console.error(self.toString());
             _errors_.push(self);
         }
         return self;
@@ -469,27 +454,28 @@
 
         opts = opts || {};
         getset = function(prop, i){
-                Object.defineProperty(Object.getPrototypeOf(host), prop, {
-                    get: function(){
-                        return this.meta(i);
-                    },
-                    set: function(value){
-                        prop = value;
-                    },
-                    configurable: true
-                });
+            Object.defineProperty(Object.getPrototypeOf(host), prop, {
+                get: function(){
+                    return this.meta[i];
+                },
+                set: function(value){
+                    prop = value;
+                },
+                configurable: true
+            });
         };
 
         for(i in opts){
-            if(opts.hasOwnProperty(i)){
+            if(opts.hasOwnProperty(i))
                 this[i] = opts[i];
-                if(i=="name") this.class = opts[i];
-            }
-            if(host!==undefined && host._meta_!==undefined){
+
+            if(host!==undefined && host.meta!==undefined){
                 if(i=="name")
                     getset("_class_", i);
+                else if(i=="ns")
+                    getset("node", i);
                 else if(i!="parent"){
-                    prop = "_"+i+"_";
+                    prop = i;
                     getset(prop, i);
                 }
             }
@@ -500,8 +486,6 @@
      * Base object definition and constructor.
      */
     Quark = function Quark(){
-        var _proto_ = Object.getPrototypeOf(this);
-
         /**
          * Factory for dynamic properties.
          * @param  {string}   prop      Property name
@@ -555,7 +539,7 @@
             path       = (name.indexOf('.') > -1) ? name : resolve(name);
             namespaces = (path.indexOf('.') > -1) ? path.split(".") : [path];
             name       = namespaces.pop();
-            ns         = this.meta('ns') || nsref(global, namespaces);
+            ns         = this.meta.ns || nsref(global, namespaces);
 
             return {
                 ns             : ns,
@@ -578,13 +562,15 @@
          * Metadata associated with the object.
          * @type {Metadata}
          */
-        this._meta_ = new Metadata({
+        this.meta = new Metadata({
             name   : 'Quark',
             info   : 'Quark Object',
+            type   : 'class',
             ns     : _sys_,
-            parent : Object.prototype,
-            type   : 'class'
+            parent : Object.prototype
         }, this.proto);
+
+        this._ = this.meta;
 
         /**
          * Throw exception if abstract class is called.
@@ -593,8 +579,8 @@
         this.init = function(){
             if(this instanceof this.constructor && this.constructor.type=='abstract')
                 throw errors.abstract();
-            this._meta_.type = 'abstract';
-            if(!this.gettype()) this.constructor.type='abstract';
+            this.meta.type = 'abstract';
+            if( !this.gettype() ) this.constructor.type = 'abstract';
         };
 
         /**
@@ -602,9 +588,9 @@
          * @return {string}    String represenation of the Object.
          */
         this.toString = function(){
-            if(typeof this._meta_.name==='undefined')
-                this._meta_.name = 'Quark';
-            return '[object ' + this._meta_.name +']';
+            if(typeof this.meta.name==='undefined')
+                this.meta.name = 'Quark';
+            return '[object ' + this.meta.name +']';
         };
 
         /**
@@ -618,8 +604,8 @@
             var q,
                 ns;
             if(query===undefined){
-                if(this._meta_.name)
-                    return this._meta_.name;
+                if(this.meta.name)
+                    return this.meta.name;
                 else if(this.constructor.name)
                     return this.constructor.name;
                 else if(this===null)
@@ -633,8 +619,8 @@
                     ns = ns.join(".");
                     ns = nsget(ns);
                 }
-                else if(typeof this._meta_.ns!='undefined'){
-                    ns = this._meta_.ns;
+                else if(typeof this.meta.ns!='undefined'){
+                    ns = this.meta.ns;
                 }
                 else{
                     ns = global;
@@ -653,7 +639,7 @@
             else if(typeof query=='function'){
                 if(this instanceof query)
                     return true;
-                else if(typeof this._meta_.mixin!='undefined' && this._meta_.mixin instanceof query)
+                else if(typeof this.meta.mixin!='undefined' && this.meta.mixin instanceof query)
                     return true;
                 else if(this.ancestors.list.indexOf(query.name)>-1)
                     return true;
@@ -671,7 +657,7 @@
 
             proto = Object.getPrototypeOf(this);
             if(proto instanceof Quark)
-                return proto._meta_.parent;
+                return proto.meta.parent;
             o = Object.create(Object.prototype);
             o.name = Object.name;
             return o;
@@ -713,22 +699,27 @@
                 return list;
             });
 
-            parent = (this._meta_.parent!==undefined) ? this._meta_.parent : null;
-            //proto = parent;
+            if(this.meta!==undefined)
+                parent = (this.meta.parent!==undefined) ? this.meta.parent : null;
+            else
+                parent = null;
 
-            if(proto instanceof Quark){
+            if(proto instanceof Quark && parent){
                 while(proto instanceof Quark){
-                    if(typeof proto._meta_.mixin!=='undefined')
-                        parents.push(proto._meta_.mixin);
-                    if(typeof proto._meta_.parent!=='undefined')
-                        parents.push(proto._meta_.parent);
-                    if(typeof proto._meta_.abstract!=='undefined')
-                        parents.push(proto._meta_.abstract);
+                    if(typeof proto.meta.mixin!=='undefined')
+                        parents.push(proto.meta.mixin);
+                    if(typeof proto.meta.parent!=='undefined')
+                        parents.push(proto.meta.parent);
+                    if(typeof proto.meta.abstract!=='undefined')
+                        parents.push(proto.meta.abstract);
 
-                    proto  = proto._meta_.parent;
-                    parent = (parent!==proto && proto._meta_.parent) ? proto._meta_.parent : null;
+                    proto  = proto.meta.parent;
+                    parent = (parent!==proto && proto.meta.parent) ? proto.meta.parent : null;
                 }
-                //parents.push(Object.prototype);
+                return parents;
+            }
+            else if(this===Quark.prototype){
+                parents.push(Object.prototype);
                 return parents;
             }
             return void 0;
@@ -739,20 +730,12 @@
          * @return {string}
          */
         this.name = this.getprop('name', function(){
-            if(typeof this._meta_!=='undefined')
-                return this._meta_.name;
-            return this.name;
+            if(typeof this.meta!=='undefined')
+                return this.meta.name;
+            else if(this.constructor.name!==undefined)
+                return this.constructor.name;
+            return "";
         });
-
-        /**
-         * Get data in the metadata object.
-         * @return {mixed}
-         */
-        this.meta = function(prop){
-            if(typeof prop==='undefined')
-                return this._meta_;
-            return this._meta_[prop];
-        };
 
         /**
          * Alias for Object.getPrototypeOf. Standin for __proto__.
@@ -798,17 +781,22 @@
 
                 proto = Object.getPrototypeOf(this);
 
+                this.meta = meta;
+                this._    = meta;
+
                 if(code && typeof code==='function'){
                     this.augment(code);
                     code.apply(this, args);
                 }
 
-                this._meta_.parent = parent;
+                this.meta.parent = parent;
                 return this;
             };
 
-            fn.prototype._meta_ = meta;
-            fn.prototype._meta_.parent = parent;
+            fn.prototype.meta = meta;
+            fn.prototype.meta.parent = parent;
+            fn.prototype.meta = fn.prototype.meta;
+            fn.prototype._    = fn.prototype.meta;
             fn.prototype.export(meta.ns);
 
             return fn;
@@ -825,22 +813,23 @@
         this.augment = function(parent, child){
             var i,
                 proto;
+
             child = (child===undefined) ? this : child;
             proto = Object.getPrototypeOf(child);
 
             for(i in parent){
                 if(!child.hasOwnProperty(i) && typeof child[i]=='undefined')
-                    if(i!=='_meta_')
+                    if(i!=='meta')
                         proto[i] = parent[i];
                 if(i=='init' && !proto.hasOwnProperty(i))
                     proto[i] = parent[i];
             }
 
-            if(typeof parent!=='function' && parent._meta_ && parent._meta_.abstract===undefined)
-                child._meta_.mixin = parent;
+            if(typeof parent!=='function' && parent.meta && parent.meta.abstract===undefined)
+                child.meta.mixin = parent;
 
             if(child instanceof atomix && !(proto instanceof atomix)){/*pass*/}else{
-                child.export(child._meta_.ns);
+                child.export(child.meta.ns);
             }
             return child;
         };
@@ -873,7 +862,7 @@
 
                 abstract = parent;
                 proto = new parent.prototype.constructor();
-                //proto.superclass = abs;
+
                 f1   = Constructor('Implementation', abstract.prototype.superclass);
                 impl = new f1();
                 proto.superclass = impl.constructor;
@@ -885,8 +874,8 @@
                 parent = Object.create(parent);
                 child  = this.augment(parent);
 
-                child._meta_.parent   = parent;
-                child._meta_.abstract = abstract.prototype;
+                child.meta.parent   = parent;
+                child.meta.abstract = abstract.prototype;
                 abstract.prototype.constructor = abs;
                 return child;
             }
@@ -901,8 +890,8 @@
                     proto.constructor = proto.implements(parent);
                     proto = proto.augment(parent, proto);
                 }
-                proto._meta_.mixin = parent;
-                proto._meta_.type  = "singleton";
+                proto.meta.mixin = parent;
+                proto.meta.type  = "singleton";
                 return this;
             }
 
@@ -910,7 +899,7 @@
                parent.prototype instanceof Singleton){
                 p = (parent instanceof Singleton) ? parent : parent.prototype;
 
-                c = p.decendant(this._meta_.name, this._meta_);
+                c = p.decendant(this.meta.name, this.meta);
                 c = new c();
 
                 f = (function(){
@@ -922,25 +911,24 @@
                     };
                 });
 
-                child = Interface(this._meta_.name);
+                child = Interface(this.meta.name);
                 child.prototype = c;
-                child.prototype.constructor = Constructor(c._meta_.name, f());
-                //child.prototype.constructor.prototype = c;
+                child.prototype.constructor = Constructor(c.meta.name, f());
                 child.prototype.export(c.exports);
-                child.prototype._meta_.parent = this;
-                child.prototype._meta_.mixin  = parent.prototype;
-                child.prototype._meta_.type   = "singleton";
+                child.prototype.meta.parent = this;
+                child.prototype.meta.mixin  = parent.prototype;
+                child.prototype.meta.type   = "singleton";
                 return new child();
             }
             else if(parent instanceof Quark){
-                child = parent.decendant(this._meta_.name, this._meta_);
-                child.prototype._meta_.parent = parent;
+                child = parent.decendant(this.meta.name, this.meta);
+                child.prototype.meta.parent = parent;
                 return Object.create(child.prototype);
             }
             else if(parent.prototype instanceof Quark){
                 parent = new parent();
-                child  = parent.decendant(this._meta_.name, this._meta_);
-                child.prototype._meta_.parent = parent;
+                child  = parent.decendant(this.meta.name, this.meta);
+                child.prototype.meta.parent = parent;
                 return Object.create(child.prototype);
             }
             return this.augment(parent, this);
@@ -961,7 +949,7 @@
                 return proto.inherits(mixin);
 
             if(this.instanceof(singleton))
-                return atomix.prototype.singleton.call(self, self._meta_.name, self._meta_, mixin).constructor;
+                return atomix.prototype.singleton.call(self, self.meta.name, self.meta, mixin).constructor;
 
             proto.constructor = function(...args){
                 var f,
@@ -975,7 +963,7 @@
                     return this;
                 };
 
-                fn = Constructor(self._meta_.name, f);
+                fn = Constructor(self.meta.name, f);
                 fn.prototype = self;
                 fn.prototype.constructor = fn;
                 fn.prototype.constructor.prototype = fn.prototype;
@@ -986,9 +974,9 @@
                 return proto;
             };
 
-            proto.constructor = Constructor(proto._meta_.name, proto.constructor);
+            proto.constructor = Constructor(proto.meta.name, proto.constructor);
             self.constructor.prototype = proto;
-            self.export(self._meta_.ns);
+            self.export(self.meta.ns);
 
             return self.constructor;
         };
@@ -1009,12 +997,12 @@
             proto = Object.getPrototypeOf(this);
 
             nsstr = (typeof ns=='object' && ns.constructor.name!="Library" && ns!=global) ? ns.constructor.name : "";
-            name  = this._meta_.name;
+            name  = this.meta.name;
             dest  = (typeof ns==='string') ? ns : nsstr;
             dest  = (typeof ns!=='undefined' && typeof ns.path!=='undefined') ? ns.path : dest;
 
             if(this.name != proto.name){
-                if(this._meta_.ns===undefined){
+                if(this.meta.ns===undefined){
                     if(typeof ns==='string'){
                         namespaces = (ns.indexOf('.') > -1) ? ns.split(".") : [ns];
                         ns = nsref(global, namespaces);
@@ -1025,19 +1013,19 @@
                     }
 
                     if(ns!==undefined)
-                        this._meta_.ns = ns;
+                        this.meta.ns = ns;
                     else{
-                        this._meta_ns = _lib_;
+                        this.meta.ns = _lib_;
                         ns = _lib_;
                     }
                 }
-                else if(this._meta_.ns && this._meta_.ns){
-                    if(this.hasOwnProperty("_meta_"))
-                        ns = this._meta_.ns;
+                else if(this.meta.ns && this.meta.ns){
+                    if(this.hasOwnProperty("meta"))
+                        ns = this.meta.ns;
                 }
                 else{
                     ns = _lib_;
-                    this._meta_.ns = _lib_;
+                    this.meta.ns = _lib_;
                 }
             }
 
@@ -1057,7 +1045,7 @@
             }
 
             if(!ns.path)
-                this._meta_.path = dest + '.' + name;
+                this.meta.path = dest + '.' + name;
 
             if(ns.path===undefined)
                 ns.path = (dest!='*') ? dest : "";
@@ -1102,7 +1090,6 @@
 
     Quark.extend = extend;
     quark = new Quark('Quark', {info:'Quark Object'});
-    //Quark.prototype = quark;
 
     /**
      * Proton. Base Object for Atomix inheritance.
@@ -1110,7 +1097,6 @@
      */
     Proton = quark.decendant('Proton', {info:'Proton Object', ns:_sys_, type:'base'});
     proton = new Proton();
-    //Proton.prototype = proton;
 
     /**
      * Creates a base singleton object all singletons may inherit from.
@@ -1124,17 +1110,16 @@
 
         s = Proton.prototype.decendant('Singleton', {info:'Singleton Object', ns:_sys_, type:'singleton'});
         s = new s();
-        s._meta_.type = 'singleton';
+        s.meta.type = 'singleton';
 
         Singleton = function Singleton(){
             if(typeof instance!=='undefined')
                 return instance;
             instance = Object.create(this);
-            instance._meta_.type = 'singleton';
+            instance.meta.type = 'singleton';
             fn = Interface('Singleton');
             fn.prototype = instance;
             fn.prototype.constructor = fn;
-            //fn.prototype.constructor.prototype = instance;
             instance = new fn();
         };
 
@@ -1143,7 +1128,6 @@
         singleton = new Singleton();
         Singleton.prototype = singleton;
         Singleton.prototype.constructor = Singleton;
-        //Singleton.prototype.constructor.prototype = singleton;
         return singleton;
     })();
 
@@ -1152,13 +1136,27 @@
      * @type {Proton}
      */
     atomix = proton.decendant('Atomix', {info:'Atomix Object', ns:_sys_, type:'utility'});
+
     atomix.prototype = new atomix();
-    atomix.prototype.implements(function(s){
-        this.init = function(s){
-            this.scope = (s===undefined) ? global : s;
-            this._meta_.type = 'utility';
+
+    atomix.prototype.implements(function(scope){
+        this.init = function(scope){
+            var i, has, proto;
+
+            has = function(id){ return proto!==undefined ? proto.hasOwnProperty(id) : false; };
+            proto = Object.getPrototypeOf(this);
+
+            this.meta.type  = 'utility';
+            this.namespaces = has('namespaces') ? proto.namespaces : _spaces_;
+            this.scope      = scope===undefined ? global           :  scope  ;
+
+            this.nmsp = ( has('nmsp') ) ? proto.nmsp : null   ;
+            this.sys  = ( has('sys' ) ) ? proto.sys  : _sys_  ;
+            this.util = ( has('util') ) ? proto.util : _util_ ;
+            this.stat = ( has('stat') ) ? proto.stat : _stat_ ;
+
+            return this;
         };
-        //this.init(s);
     });
 
     /**
@@ -1261,12 +1259,12 @@
 
         s = singleton.decendant(p.name, p.opts);
         s = new s();
-        s._meta_        = new Metadata(p.opts, Object.getPrototypeOf(s));
-        s._meta_.name   = p.name;
-        s._meta_.info   = p.name + ' Object';
-        s._meta_.parent = singleton;
-        s._meta_.type   = 'singleton';
-        s._meta_.ns     = p.ns;
+        s.meta        = new Metadata(p.opts, Object.getPrototypeOf(s));
+        s.meta.name   = p.name;
+        s.meta.info   = p.name + ' Object';
+        s.meta.parent = singleton;
+        s.meta.type   = 'singleton';
+        s.meta.ns     = p.ns;
 
         funx = (function(){
             var fn,
@@ -1294,7 +1292,6 @@
         fn = Interface(p.name);
         fn.prototype = s;
         fn.prototype.constructor = Constructor(p.name, funx());
-        //fn.prototype.constructor.prototype = s;
         instance = new fn();
 
         instance.export(p.ns);
@@ -1540,7 +1537,6 @@
                 return atomix.prototype.import(nspath, true);
             }
             catch(e){
-                //console.warn("Namespace '" + nspath + "' not found.");
                 if(sub.indexOf(dir)<0){
                     for(i=0; i<sub.length; i++){
                         _nspath = Atomix.subdir(nspath, sub[i]);
@@ -1609,7 +1605,6 @@
             get: function(){
                 _nmsp_     = null;
                 this.nmsp  = null;
-                //this.scope = Object.getPrototypeOf(this).scope;
                 return this;
             },
             set: function(){
@@ -1836,7 +1831,7 @@
             error;
 
         atmx  = atomix.prototype;
-        error = errors.static;
+        error = errors.static();
 
         if(_class_===undefined || _class_===null || _class_===''){
             if(_nmsp_===null)
@@ -1857,20 +1852,14 @@
                     f = _class_;
                     f = f.bind.apply(f, [f].concat(args));
                     i = new f();
-                    // i = Object.create(i);
-                    // f = i.decendant(i.name);
-                    // f = f.bind(f, ...args);
-                    // i = new f();
-
                     name = name || i.constructor.name;
 
                     fn = Constructor(name, i.constructor);
                     fn.prototype = i;
                     fn.prototype.constructor = fn;
-                    //fn.prototype.constructor.prototype = fn.prototype;
                     fn.bind(fn, ...args);
 
-                    n = new fn();
+                    n = Object.create(i);
                     n.constructor = Constructor(name, function(){throw error;});
                     n.init = i.init;
 
@@ -1928,12 +1917,11 @@
     atomix.prototype.lib               = atomix.prototype.exports.lib;
     atomix.prototype.util              = atomix.prototype.exports.util;
     atomix.prototype.stat              = atomix.prototype.exports.stat;
-    //atomix.prototype.new               = atomix.prototype.reset.call(Atomix);
+    atomix.prototype.new               = atomix.prototype.reset.call(atomix.prototype);
     atomix.prototype.factory           = new lib();
     atomix.prototype.factory.interface = Interface;
     atomix.prototype.factory.construct = Constructor;
     atomix.prototype.factory.abstract  = Abstract;
-    //atomix.prototype.new               = atomix.prototype.reset.call(atomix.prototype);
 
     /* Global instance of Atomix */
     Atomix = new atomix();
@@ -1946,15 +1934,9 @@
     Atomix.stat       = Atomix.exports.stat;
     Atomix.new        = Atomix.reset.call(Atomix);
 
-    //delete Object.getPrototypeOf(Atomix).constructor;
     atomix = Atomix.constructor;
     atomix.prototype = Atomix;
     mx = Atomix;
-    //atomix.prototype.constructor = atomix;
-    // atomix.prototype.constructor.prototype = Atomix;
-    // atomix.prototype.constructor.prototype.constructor = atomix;
-    // atomix.prototype.constructor.prototype.constructor.prototype = Atomix;
-    //Object.setPrototypeOf(Atomix, atomix.prototype.constructor.prototype.constructor.prototype);
 
     Factory =
     Atomix.class('Factory', {type:'utility', ns:_util_})
@@ -2081,14 +2063,14 @@
                         "\nExplicityly assign a name by passing a value into the namespace parameter.";
                 }
             }
-            if(del && constructor.prototype instanceof Quark && constructor.prototype._meta_.ns!==ns[0]){
-                if(constructor.prototype._meta_.ns.hasOwnProperty('lib') &&
-                   constructor.prototype._meta_.ns.lib[ns[1]]!==undefined)
-                    delete constructor.prototype._meta_.ns.lib[ns[1]];
+            if(del && constructor.prototype instanceof Quark && constructor.prototype.meta.ns!==ns[0]){
+                if(constructor.prototype.meta.ns.hasOwnProperty('lib') &&
+                   constructor.prototype.meta.ns.lib[ns[1]]!==undefined)
+                    delete constructor.prototype.meta.ns.lib[ns[1]];
                 else
-                    delete constructor.prototype._meta_.ns[ns[1]];
+                    delete constructor.prototype.meta.ns[ns[1]];
 
-                constructor.prototype._meta_.ns = ns[0];
+                constructor.prototype.meta.ns = ns[0];
             }
 
             return Atomix.new.export(ns[0], ns[1], constructor);
@@ -2200,9 +2182,6 @@
                                 cls = nsget(name + "." + prop);
                                 console.log("--- "     + prop);
                                 dirs.push(  name + "." + prop);
-                                //console.groupCollapsed("--- " + prop);
-                                //console.log(cls.prototype._type_);
-                                //console.groupEnd();
                                 break;
                             case 'json':
                                 d = dirs.filter(lookup);
@@ -2258,12 +2237,12 @@
             if(format!='console' && format!='stdio')
                 return dirs;
 
-            console.groupCollapsed(dirs.length + " import " + (dirs.length>1 ? "paths" : "path") + " from " +
-                                   libs + " " + (libs>1 ? "libraries" : "library"));
-            for(i=0; i<dirs.length; i++)
-                console.log(dirs[i]);
+            console.groupCollapsed(dirs.length + " import " + (dirs.length>1 ? "paths" : "path") +
+                " from " + libs + " " + (libs>1 ? "libraries" : "library"));
+                for(i=0; i<dirs.length; i++)
+                    console.log(dirs[i]);
             console.groupEnd();
-            //console.dir(dirs);
+
             return dirs.length;
         };
 
@@ -2405,12 +2384,10 @@
 
     global.Quark     = Quark;
     global.Proton    = Proton;
-    global.singleton = singleton;
     global.Singleton = Singleton;
     global.declare   = declare;
-    global.ports     = port;
+    global.port      = port;
     global.pkg       = port;
-    global.quark     = quark;
     global.mx        = mx;
 
     global.Atomix = (function(){
@@ -2423,15 +2400,26 @@
         for(i in self)
             Atomixer[i] = self[i];
 
-        for(i in self._meta_)
-            Atomixer["_" + i + "_"] = self.meta(i);
+        for(i in self.meta){
+            if(i=="name"){
+                Atomixer._class_ = self.meta[i];
+                Atomixer.name = self.meta[i];
+            }
+            else if(i=="ns")
+                Atomixer.node = self.meta[i];
+
+            else if(Atomixer[i]===undefined)
+                Atomixer[i] = self.meta[i];
+        }
 
         Atomixer.new       = self.new;
+        Atomixer.scope     = self.scope;
         Atomixer.ancestors = self.ancestors;
         Atomixer.name      = self.name;
         Atomixer.parent    = self.parent;
         Atomixer.proton    = self.proton;
 
+        Atomixer.nmsp       = _nmsp_;
         Atomixer.namespaces = _spaces_;
         Atomixer.sys        = _sys_;
         Atomixer.lib        = _lib_;
@@ -2440,14 +2428,12 @@
 
         return Atomixer;
     }).call(Atomix);
-    console.log(global.Atomix)
-    Object.defineProperty(global, 'Atomix', {configurable: false});
 
     /* Freeze global instance of Atomix Object. */
-    // Object.freeze(proton);
-    // Object.freeze(Proton);
-    // Object.seal(global.Atomix);
-    // Object.seal(global.Atomix._meta_);
-    // Object.preventExtensions(global.Atomix);
+    Object.defineProperty(global, 'Atomix', {configurable: false});
+    Object.freeze(Quark);
+    Object.freeze(Proton);
+    Object.seal(global.Atomix);
+    Object.seal(global.Atomix.meta);
+    Object.preventExtensions(global.Atomix);
 })(this);
-//const EOF = eof;
